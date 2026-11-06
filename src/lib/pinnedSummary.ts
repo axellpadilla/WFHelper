@@ -45,3 +45,10 @@ export function computePinnedTotals(
     .sort((a, b) => b.needed - a.needed);
   return { count, credits, resources, missing: resources.filter((r) => r.owned < r.needed) };
 }
+
+export function pinnedResourcesForDisplay(
+  totals: Pick<PinnedTotals, "resources" | "missing">,
+  missingOnly: boolean,
+): PinnedResourceTotal[] {
+  return missingOnly ? totals.missing : totals.resources;
+}

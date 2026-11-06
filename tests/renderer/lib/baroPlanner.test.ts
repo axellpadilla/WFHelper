@@ -212,6 +212,26 @@ describe("baroBudget", () => {
     });
   });
 
+  it("deducts one owned copy per wished item from the budget when requested", () => {
+    const rows = buildBaroCatalog(
+      null,
+      current,
+      { ...wallet(0, 0), LongGuns: [{ ItemType: first }] },
+      {},
+      { [first]: 2, [second]: 1 },
+      now,
+    );
+
+    expect(baroBudget(rows, wallet(0, 0))).toMatchObject({
+      totalDucats: 1800,
+      totalCredits: 180_000,
+    });
+    expect(baroBudget(rows, wallet(0, 0), { excludeOwned: true })).toMatchObject({
+      totalDucats: 1200,
+      totalCredits: 120_000,
+    });
+  });
+
   it("keeps missing balances distinct from zero and reads only the configured currencies", () => {
     const rows = buildBaroCatalog(null, current, null, {}, { [first]: 1 }, now);
     for (const inventory of [null, {}, { PrimeTokens: 999, PremiumCredits: 999 }]) {

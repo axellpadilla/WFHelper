@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computePinnedTotals } from "../../../src/lib/pinnedSummary.js";
+import { computePinnedTotals, pinnedResourcesForDisplay } from "../../../src/lib/pinnedSummary.js";
 
 const FERRITE = "/Lotus/Types/Items/MiscItems/Ferrite";
 const MORPHICS = "/Lotus/Types/Items/MiscItems/Morphics";
@@ -61,5 +61,18 @@ describe("computePinnedTotals", () => {
     expect(totals.count).toBe(0);
     expect(totals.resources).toHaveLength(0);
     expect(totals.missing).toHaveLength(0);
+  });
+
+  it("shows only resources that remain short when missing-only is enabled", () => {
+    const totals = computePinnedTotals(
+      entries,
+      new Set(["/Lotus/Types/Recipes/NyxChassis", "/Lotus/Types/Recipes/NyxSystems"]),
+      (uniqueName) => (uniqueName === FERRITE ? 600 : 5),
+    );
+
+    expect(pinnedResourcesForDisplay(totals, false)).toHaveLength(2);
+    expect(pinnedResourcesForDisplay(totals, true)).toEqual([
+      { uniqueName: FERRITE, needed: 800, owned: 600 },
+    ]);
   });
 });

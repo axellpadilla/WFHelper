@@ -53,7 +53,7 @@
   });
   let filter = $state<Filter>("all");
   let search = $state("");
-  let unowned = $state(false);
+  let onlyUnowned = $state(false);
   let selectedVisit = $state("");
   let addSearch = $state("");
   let limit = $state(50);
@@ -62,7 +62,7 @@
   const catalog = $derived(
     buildBaroCatalog($baroHistory, current, $inventoryData, $itemDb, $baroWishlist, $clock),
   );
-  const budget = $derived(baroBudget(catalog, $inventoryData));
+  const budget = $derived(baroBudget(catalog, $inventoryData, { excludeOwned: onlyUnowned }));
   const visits = $derived(
     [...($baroHistory?.visits ?? [])].sort((a, b) => b.activation - a.activation),
   );
@@ -85,7 +85,7 @@
         )
           return false;
         if (filter === "wishlist" && row.quantity === 0) return false;
-        if (unowned && $inventoryData && row.owned) return false;
+        if (onlyUnowned && $inventoryData && row.owned) return false;
         return row.name
           .toLocaleLowerCase($locale)
           .includes(search.trim().toLocaleLowerCase($locale));
@@ -258,7 +258,7 @@
       ><input
         type="checkbox"
         data-baro-unowned
-        bind:checked={unowned}
+        bind:checked={onlyUnowned}
         disabled={!$inventoryData}
         onchange={() => (limit = 50)}
       />{$t("baro.unownedOnly")}</label

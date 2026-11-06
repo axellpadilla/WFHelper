@@ -55,6 +55,7 @@ export interface PlannedItem {
   resources: PlannerResource[];
   credits: number;
   completeness: number;
+  missingParts: number;
   craftableNow: boolean;
 }
 
@@ -65,7 +66,7 @@ export interface MasteryPlan {
   craftableCount: number;
 }
 
-export type PlannerSort = "mastery_xp" | "completeness" | "name";
+export type PlannerSort = "mastery_xp" | "completeness" | "missing_parts" | "name";
 
 function isPartLike(node: CraftingTreeNode): boolean {
   return node.isCraftable || node.isBlueprintItem === true || isRecipePartPath(node.uniqueName);
@@ -176,6 +177,7 @@ function planPin(
       resources: [],
       credits: 0,
       completeness: 0,
+      missingParts: 0,
       craftableNow: false,
     };
   }
@@ -226,6 +228,7 @@ function planPin(
     resources,
     credits: state.credits,
     completeness,
+    missingParts: components.filter((component) => plannerPartState(component) !== "owned").length,
     craftableNow: satisfied === topLevel.length,
   };
 }
@@ -317,6 +320,7 @@ export function sortPlannedItems(
   const within = (a: PlannedItem, b: PlannedItem): number => {
     if (sort === "mastery_xp") return b.masteryXpRemaining - a.masteryXpRemaining;
     if (sort === "completeness") return b.completeness - a.completeness;
+    if (sort === "missing_parts") return a.missingParts - b.missingParts;
     return 0;
   };
   return [...items].sort(

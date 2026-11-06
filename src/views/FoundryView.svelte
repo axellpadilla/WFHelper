@@ -19,7 +19,7 @@
     parsedItems,
   } from "../stores/data.js";
   import { buildSubsumedFamilySet, isFrameSubsumed, isSubsumableFrame } from "../lib/helminth.js";
-  import { computePinnedTotals } from "../lib/pinnedSummary.js";
+  import { computePinnedTotals, pinnedResourcesForDisplay } from "../lib/pinnedSummary.js";
   import {
     clearPinnedRecipes,
     pinnedRecipes,
@@ -34,7 +34,12 @@
   import { buildParsedItemFromDb } from "../lib/parsedItemFromDb.js";
   import { CREDITS_ICON_URL } from "../lib/assetUrls.js";
   import { clockStore } from "../lib/timers.js";
-  import { persistedString, readStorage, writeStorage } from "../lib/persistence.js";
+  import {
+    persistedBoolean,
+    persistedString,
+    readStorage,
+    writeStorage,
+  } from "../lib/persistence.js";
   import {
     chainBuildableBlueprints,
     EQUIPMENT_CATEGORY_ORDER,
@@ -53,11 +58,16 @@
     MasteryStatus,
     RecipeIngredient,
   } from "../types/inventory.js";
-  import type { FoundryState } from "../types/filters.js";
+  import type { FoundryState, SharedSortKey } from "../types/filters.js";
 
-  type SortMode = "name" | "time" | "count";
+  type SortMode = Extract<SharedSortKey, "name" | "time" | "count" | "missing_parts">;
   type ItemStatus = "claimable" | "in-progress" | "ready-to-build" | "not-ready";
-  type FilterKey = "all" | "status:in-progress" | "status:ready" | `cat:${string}`;
+  type FilterKey =
+    | "all"
+    | "status:in-progress"
+    | "status:nearly-ready"
+    | "status:ready"
+    | `cat:${string}`;
 
   interface FoundryEntry {
     source: "building" | "blueprint";
@@ -89,6 +99,7 @@
   const STATUS_FILTERS: Array<{ key: FilterKey; labelKey: MessageKey }> = [
     { key: "all", labelKey: "common.all" },
     { key: "status:in-progress", labelKey: "common.inProgress" },
+    { key: "status:nearly-ready", labelKey: "foundry.status.nearlyReady" },
   ];
   // Categories are data values, not UI copy, so they stay untranslated.
   const CATEGORY_FILTERS = EQUIPMENT_CATEGORY_ORDER.map((cat) => ({
@@ -114,6 +125,7 @@
   $: foundrySortOptions = [
     ["count", $tr("foundry.sort.count")],
     ["time", $tr("foundry.sort.time")],
+    ["missing_parts", $tr("mastery.sort.missingParts")],
     ["name", $tr("common.name")],
   ] as Array<[SortMode, string]>;
   const nowClock = clockStore(1000);
@@ -222,6 +234,8 @@
 
   $: pinnedSet = new Set($pinnedRecipes);
   $: pinnedTotals = computePinnedTotals(allEntries, pinnedSet, (un) => ownedMap.get(un) ?? 0);
+  const pinnedMissingOnly = persistedBoolean("foundry-pinned-missing-only", false);
+  $: pinnedResources = pinnedResourcesForDisplay(pinnedTotals, $pinnedMissingOnly);
 
   function filterableFoundryEntry(row: { e: FoundryEntry; status: ItemStatus }): {
     name: string;
@@ -234,6 +248,7 @@
     status: MasteryStatus | "unknown";
     vaulted: boolean;
     foundryState: FoundryState;
+    missingParts: number;
     looseComponent: boolean;
     subsumed: boolean | undefined;
   } {
@@ -252,6 +267,7 @@
       status: masteryStateFor(row.e),
       vaulted: db?.vaulted === true,
       foundryState: FOUNDRY_STATE_BY_STATUS[row.status],
+      missingParts: row.e.source === "blueprint" ? missingIngredientCount(row.e) : 0,
       looseComponent: Boolean(db?.componentOf),
       subsumed:
         row.e.category === "Warframe" && isSubsumableFrame(row.e.name)
@@ -263,8 +279,23 @@
   function passesActiveFilter(e: FoundryEntry, s: ItemStatus, activeKey: FilterKey): boolean {
     if (activeKey === "all") return true;
     if (activeKey === "status:in-progress") return s === "in-progress" || s === "claimable";
+    if (activeKey === "status:nearly-ready") {
+      return e.source === "blueprint" && missingIngredientCount(e) === 1;
+    }
     if (activeKey.startsWith("cat:")) return e.category === activeKey.slice(4);
     return true;
+  }
+
+  function missingIngredientCount(entry: FoundryEntry): number {
+    const required = new SvelteMap<string, number>();
+    for (const ingredient of entry.ingredients) {
+      required.set(
+        ingredient.uniqueName,
+        (required.get(ingredient.uniqueName) ?? 0) + ingredient.count,
+      );
+    }
+    return [...required].filter(([uniqueName, count]) => (ownedMap.get(uniqueName) ?? 0) < count)
+      .length;
   }
 
   $: filtered = decorated.filter(({ e, status }) => {
@@ -381,10 +412,18 @@
           <button class="filter-tab" title={$tr("foundry.unpinAll")} on:click={clearPinnedRecipes}
             >{$tr("foundry.clear")}</button
           >
+          <button
+            type="button"
+            class="filter-tab"
+            class:active={$pinnedMissingOnly}
+            aria-pressed={$pinnedMissingOnly}
+            on:click={() => pinnedMissingOnly.update((value) => !value)}
+            >{$tr("foundry.missingOnly")}</button
+          >
         </div>
       </div>
       <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
-        {#each pinnedTotals.resources as res (res.uniqueName)}
+        {#each pinnedResources as res (res.uniqueName)}
           {@const ok = res.owned >= res.needed}
           <div class="flex items-center gap-1.5 text-sm" title={ingredientName(res.uniqueName)}>
             <div class="flex h-7 w-7 shrink-0 items-center justify-center">
@@ -400,7 +439,7 @@
           </div>
         {/each}
       </div>
-      {#if pinnedTotals.missing.length > 0}
+      {#if !$pinnedMissingOnly && pinnedTotals.missing.length > 0}
         <div
           class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border-subtle pt-2"
         >

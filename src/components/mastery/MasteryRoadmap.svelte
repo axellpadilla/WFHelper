@@ -16,7 +16,7 @@
   import type { MasteryRoadmap, MasteryRoadmapRecommendation } from "../../lib/masteryRoadmap.js";
 
   type RoadmapMode = "easy" | "relics" | "platinum";
-  type RoadmapSort = "recommended" | "xp" | "price";
+  type RoadmapSort = "recommended" | "xp" | "price" | "xp_per_plat";
 
   const MODE_TAB_KEY = "wf_mastery_roadmap_tab";
 
@@ -78,6 +78,14 @@
         return (
           (a.estimatedCost ?? Number.POSITIVE_INFINITY) -
             (b.estimatedCost ?? Number.POSITIVE_INFINITY) || a.name.localeCompare(b.name)
+        );
+      }
+      if (sort === "xp_per_plat") {
+        return (
+          (b.xpPerPlatinum ?? 0) - (a.xpPerPlatinum ?? 0) ||
+          (a.estimatedCost ?? Number.POSITIVE_INFINITY) -
+            (b.estimatedCost ?? Number.POSITIVE_INFINITY) ||
+          a.name.localeCompare(b.name)
         );
       }
       return 0;
@@ -187,6 +195,9 @@
             <option value="xp">{$tr("mastery.roadmap.sortMostXp")}</option>
             {#if mode === "platinum"}<option value="price"
                 >{$tr("mastery.roadmap.sortLowestPrice")}</option
+              >{/if}
+            {#if mode === "platinum"}<option value="xp_per_plat"
+                >{$tr("mastery.roadmap.sortXpPerPlat")}</option
               >{/if}
           </select>
         </label>
