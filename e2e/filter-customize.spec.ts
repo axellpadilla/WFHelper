@@ -1,5 +1,6 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
+import { FILTER_CONTROL_SUPPORT } from "../src/lib/filters";
 import {
   closeElectronTestHarness,
   launchElectronTestHarness,
@@ -8,9 +9,10 @@ import {
   type ElectronTestHarness,
 } from "./electronTestHarness";
 
-// FILTER_CONTROL_SUPPORT.inventory: search and sort from the header bar plus the
-// ten advanced controls, all editable from either bar's popover.
-const INVENTORY_CONTROLS = 12;
+// Derived from the view's own support list instead of a literal that drifts
+// whenever a filter control is added: search and sort from the header bar plus
+// the advanced controls, all editable from either bar's popover.
+const INVENTORY_CONTROLS = FILTER_CONTROL_SUPPORT.inventory.length;
 
 function toggles(page: Page): Locator {
   return page.locator('[data-filter-customize-toggle="inventory"]');
