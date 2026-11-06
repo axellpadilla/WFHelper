@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSafetyContext } from "../../../../src/lib/inventory/safetyRules.js";
+import { buildSafetyContext, recipeCopiesFor } from "../../../../src/lib/inventory/safetyRules.js";
 import { isRewardNeeded, type RewardNeedContext } from "../../../../src/lib/relic/rewardNeed.js";
 import type { ItemDbEntry, MasteryStatus } from "../../../../src/types/inventory.js";
 import type { RelicReward } from "../../../../src/types/relics.js";
@@ -11,6 +11,8 @@ const SARYN_PRIME = "/Lotus/Powersuits/Mag/SarynPrime";
 const LEX_BARREL = "/Lotus/Types/Recipes/Weapons/WeaponParts/PrimeLexBarrel";
 const LEX_PRIME = "/Lotus/Weapons/Tenno/Pistol/PrimeLex";
 const AKLEX_PRIME = "/Lotus/Weapons/Tenno/Pistol/PrimeAkLex";
+const FORMA_BLUEPRINT = "/Lotus/Types/Recipes/Components/FormaBlueprint";
+const FORMA = "/Lotus/Types/Recipes/Components/Forma";
 
 const ITEM_DB: Record<string, ItemDbEntry> = {
   [SARYN_PRIME]: {
@@ -145,5 +147,41 @@ describe("isRewardNeeded", () => {
     const reward = makeReward({ uniqueName: null });
     expect(isRewardNeeded(reward, makeContext({ owned: { [SARYN_PRIME]: 1 } }))).toBe(true);
     expect(isRewardNeeded(reward, makeContext({ ownedByName: true }))).toBe(false);
+  });
+
+  it("never treats an unresolved Forma Blueprint reward as needed", () => {
+    const reward = makeReward({
+      name: "2X Forma Blueprint",
+      uniqueName: null,
+      urlName: "forma_blueprint",
+    });
+    expect(isRewardNeeded(reward, makeContext())).toBe(false);
+  });
+
+  it("ignores Forma Blueprint even when an unmastered recipe claims it", () => {
+    const itemDb: Record<string, ItemDbEntry> = {
+      [FORMA]: {
+        name: "Forma",
+        masterable: true,
+        components: [{ name: "Forma Blueprint", uniqueName: FORMA_BLUEPRINT, itemCount: 1 }],
+      },
+      [FORMA_BLUEPRINT]: {
+        name: "Forma Blueprint",
+        isBuildComponent: true,
+        componentOf: FORMA,
+      },
+    };
+    const ctx = makeContext({ itemDb, mastery: { [FORMA]: "progress" } });
+    expect(recipeCopiesFor(ctx.safety, FORMA_BLUEPRINT)).toBeGreaterThan(0);
+    expect(
+      isRewardNeeded(
+        makeReward({
+          name: "Forma Blueprint",
+          uniqueName: FORMA_BLUEPRINT,
+          urlName: "unresolved_reward_slug",
+        }),
+        ctx,
+      ),
+    ).toBe(false);
   });
 });

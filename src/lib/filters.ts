@@ -25,6 +25,7 @@ const DESCENDING_DEFAULT_SORT_KEYS = new Set<string>([
   "mastery_xp",
   "parts_owned",
   "ev",
+  "gold",
   "ducat",
 ]);
 

@@ -35,6 +35,7 @@
   import { masteryData } from "../stores/mastery.js";
   import { activeRelic } from "../stores/modals.js";
   import { priceCacheRevision } from "../stores/pricing.js";
+  import { getCachedPriceState } from "../lib/wfm/priceCache.js";
   import { themeSettings } from "../stores/theme.js";
   import {
     computeGroupDucatonator,
@@ -62,7 +63,9 @@
   import { inventorySafetyContext } from "../stores/inventorySafety.js";
   import { stripQuantityPrefix } from "../../config/shared/quantityPrefix.js";
   import {
+    RELIC_GOLD_AT_LEAST_MAX,
     RELIC_OWNED_ABOVE_STEPS,
+    relicGoldReward,
     relicOwnedCountForMode,
     relicQualityForMode,
     selectRelicPlannerRows,
@@ -94,6 +97,7 @@
     ["tier", "common.default"],
     ["name", "common.name"],
     ["ev", "common.platinum"],
+    ["gold", "relics.sort.gold"],
     ["ducat", "common.ducats"],
     ["ducatonator", "relics.sort.ducatsPerPlat"],
     ["owned", "common.owned"],
@@ -225,13 +229,36 @@
       .map((group) => group.key);
   }
 
-  function pushFiltersToOverlay(): void {
-    send("overlay:push-relic-filters", {
+  function overlayFilterPayload() {
+    return {
       ...plannerFiltersOf($relicViewState, Boolean($inventoryData)),
       tierFilter: $relicViewState.tierFilter === "all" ? null : $relicViewState.tierFilter,
       neededRewardKeys: neededRewardKeysForOverlay(),
       pinnedQualities: { ...ownedModeSelectedQualityByGroup },
-    });
+    };
+  }
+
+  function pushFiltersToOverlay(): void {
+    const payload = overlayFilterPayload();
+    if (overlaySyncTimer) clearTimeout(overlaySyncTimer);
+    overlaySyncTimer = null;
+    pendingOverlaySyncSignature = null;
+    lastOverlaySyncSignature = JSON.stringify(payload);
+    send("overlay:push-relic-filters", payload);
+  }
+
+  function scheduleOverlayFilterSync(payload: ReturnType<typeof overlayFilterPayload>): void {
+    if (!payload || !overlaySyncReady) return;
+    const signature = JSON.stringify(payload);
+    if (signature === lastOverlaySyncSignature || signature === pendingOverlaySyncSignature) return;
+    if (overlaySyncTimer) clearTimeout(overlaySyncTimer);
+    pendingOverlaySyncSignature = signature;
+    overlaySyncTimer = setTimeout(() => {
+      overlaySyncTimer = null;
+      pendingOverlaySyncSignature = null;
+      lastOverlaySyncSignature = signature;
+      send("overlay:push-relic-filters", payload);
+    }, 150);
   }
 
   function toggleRelicSortDirection(): void {
@@ -262,6 +289,21 @@
     const ownedAbove = Number((event.currentTarget as HTMLSelectElement).value);
     if (Number.isFinite(ownedAbove)) {
       setRelicFilter({ ownedAbove });
+    }
+  }
+
+  // Keep partial typing (for example, "4" on the way to "40") out of the
+  // persisted/filter state until it is a valid in-range price.
+  function setRelicGoldAtLeast(text: string): void {
+    goldAtLeastText = text;
+    const trimmed = text.trim();
+    const goldAtLeast = trimmed === "" ? 0 : Number(trimmed);
+    if (
+      Number.isFinite(goldAtLeast) &&
+      goldAtLeast >= 0 &&
+      goldAtLeast <= RELIC_GOLD_AT_LEAST_MAX
+    ) {
+      setRelicFilter({ goldAtLeast });
     }
   }
 
@@ -297,6 +339,11 @@
   let rewardGameRefBySlug: Record<string, string> = {};
   let rewardIconBySlug: Record<string, string> = {};
   let rewardIconByName: Record<string, string> = {};
+  let goldAtLeastText = $relicViewState.goldAtLeast > 0 ? String($relicViewState.goldAtLeast) : "";
+  let overlaySyncReady = false;
+  let overlaySyncTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastOverlaySyncSignature: string | null = null;
+  let pendingOverlaySyncSignature: string | null = null;
 
   const warmupController = createRelicWarmupController(() => {
     relicEvRevision.update((value) => value + 1);
@@ -319,15 +366,34 @@
     if ($relicDb) {
       warmupController.scheduleWarmup();
     }
+    overlaySyncReady = Boolean($relicDb);
   });
 
   onDestroy(() => {
     warmupController.destroy();
+    if (overlaySyncTimer) clearTimeout(overlaySyncTimer);
   });
 
   $: if ($relicDb) {
     configureRelicRuntimeCacheFingerprint($relicDb);
   }
+
+  // Include the Needed verdict in the signature: inventory, mastery, safety,
+  // and foundry changes can alter overlay rows without changing planner filters.
+  $: autoOverlayFilterPayload =
+    overlaySyncReady && $relicDb
+      ? {
+          ...plannerFiltersOf($relicViewState, Boolean($inventoryData)),
+          tierFilter: $relicViewState.tierFilter === "all" ? null : $relicViewState.tierFilter,
+          neededRewardKeys: $relicViewState.containsNeededReward
+            ? Object.values($relicDb.groups)
+                .filter((group) => groupHasNeededReward(group, needContext))
+                .map((group) => group.key)
+            : null,
+          pinnedQualities: { ...ownedModeSelectedQualityByGroup },
+        }
+      : null;
+  $: if (autoOverlayFilterPayload) scheduleOverlayFilterSync(autoOverlayFilterPayload);
 
   function computeFilteredRelicGroups(
     db: typeof $relicDb,
@@ -365,6 +431,7 @@
         ownedCount: relicOwnedCountForMode(ownedCounts[group.key], viewState.qualityMode),
         ownedTotal: relicOwnedCountForMode(ownedCounts[group.key], "owned"),
         plat: ev.plat,
+        gold: goldPrice(group),
         ducat: ev.ducat,
         ratio: ev.ratio,
       };
@@ -497,6 +564,19 @@
     return typeof reward.urlName === "string" && reward.urlName.trim().length > 0
       ? reward.urlName.trim().toLowerCase()
       : "";
+  }
+
+  function goldPrice(group: RelicGroup): number | null {
+    const rewards =
+      group.qualities.intact?.rewards ??
+      RELIC_QUALITY_COLUMNS.map((quality) => group.qualities[quality]?.rewards).find(
+        (list) => list?.length,
+      ) ??
+      [];
+    const goldReward = relicGoldReward(rewards);
+    const slug = goldReward ? rewardSlug(goldReward) : "";
+    const cached = slug ? getCachedPriceState(slug) : null;
+    return cached?.status === "ok" ? cached.median : null;
   }
 
   function rewardUniqueName(
@@ -738,6 +818,22 @@
               </select>
             </label>
 
+            <label class="shared-filter-sort" title={$tr("relics.goldAtLeastTitle")}>
+              <span>{$tr("relics.goldAtLeastLabel")}</span>
+              <input
+                type="number"
+                inputmode="numeric"
+                min="0"
+                max={RELIC_GOLD_AT_LEAST_MAX}
+                class="shared-filter-select relic-gold-input"
+                data-relic-gold-at-least
+                placeholder={$tr("relics.minOwned.any")}
+                value={goldAtLeastText}
+                on:input={(event) => setRelicGoldAtLeast(event.currentTarget.value)}
+                on:contextmenu|preventDefault={() => setRelicGoldAtLeast("")}
+              />
+            </label>
+
             <label class="shared-filter-sort" title={$tr("relics.vaultedTitle")}>
               <span>{$tr("relics.vaultedLabel")}</span>
               <select
@@ -818,3 +914,18 @@
     {/if}
   </LayoutGrid>
 </section>
+
+<style>
+  /* The select class brings the look; the number input needs neither the arrow gap nor 8rem. */
+  .relic-gold-input {
+    min-width: 0;
+    width: 4.5rem;
+    padding-right: 0.5rem;
+    color: var(--text-primary);
+  }
+  .relic-gold-input::-webkit-inner-spin-button,
+  .relic-gold-input::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+</style>
