@@ -9,6 +9,30 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
 const MAX_RANK = 20;
 const REQUEST_TIMEOUT_MS = 10_000;
+export const MARKET_STATS_CACHE_TTL_MS = 5 * 60_000;
+
+interface ArchivedStatsBuckets {
+  latest: MarketStatPoint[];
+  ninetyDays: MarketStatPoint[];
+}
+
+export function isMarketStatsCacheFresh(fetchedAt: number, now = Date.now()): boolean {
+  const age = now - fetchedAt;
+  return Number.isFinite(fetchedAt) && age >= 0 && age < MARKET_STATS_CACHE_TTL_MS;
+}
+
+/** Uses the archived daily rows as both the latest series and its 90-day slice. */
+export function buildArchivedStatsBuckets(
+  points: readonly MarketStatPoint[],
+  now = Date.now(),
+): ArchivedStatsBuckets | null {
+  if (points.length === 0) return null;
+  const latest = [...points].sort((a, b) => a.time - b.time);
+  return {
+    latest,
+    ninetyDays: latest.filter((point) => point.time >= now - 90 * DAY_MS),
+  };
+}
 
 function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);

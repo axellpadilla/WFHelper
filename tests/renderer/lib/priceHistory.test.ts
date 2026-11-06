@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MARKET_STATS_MAX_POINTS } from "../../../config/shared/marketStats";
-import { fetchBackendPriceHistory, parsePriceHistoryRows } from "../../../src/lib/wfm/priceHistory";
+import {
+  buildArchivedStatsBuckets,
+  fetchBackendPriceHistory,
+  isMarketStatsCacheFresh,
+  MARKET_STATS_CACHE_TTL_MS,
+  parsePriceHistoryRows,
+} from "../../../src/lib/wfm/priceHistory";
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock("../../../src/lib/wfm/backendLite", () => ({ fetchBackendRaw: mocks.fetch }));
@@ -118,5 +124,39 @@ describe("parsePriceHistoryRows", () => {
       [],
     );
     expect(parsePriceHistoryRows({ ok: true, rows: "none" }, NOW)).toEqual([]);
+  });
+});
+
+describe("Market Browse statistics freshness and archive fallback", () => {
+  it("keeps cache entries fresh for five minutes and expires them at the TTL", () => {
+    const fetchedAt = NOW;
+
+    expect(MARKET_STATS_CACHE_TTL_MS).toBe(5 * 60_000);
+    expect(isMarketStatsCacheFresh(fetchedAt, fetchedAt)).toBe(true);
+    expect(isMarketStatsCacheFresh(fetchedAt, fetchedAt + MARKET_STATS_CACHE_TTL_MS - 1)).toBe(
+      true,
+    );
+    expect(isMarketStatsCacheFresh(fetchedAt, fetchedAt + MARKET_STATS_CACHE_TTL_MS)).toBe(false);
+    expect(isMarketStatsCacheFresh(fetchedAt + 1, fetchedAt)).toBe(false);
+  });
+
+  it("builds latest and 90-day fallback buckets from archived daily rows", () => {
+    const points = parsePriceHistoryRows(
+      body([
+        ["2026-05-01", null, 10, 1],
+        ["2026-06-11", 0, 20, 2],
+        ["2026-09-01", null, 30, 3],
+      ]),
+      NOW,
+    );
+    const fallback = buildArchivedStatsBuckets(points, NOW);
+
+    expect(fallback?.latest.map((point) => point.median)).toEqual([10, 20, 30]);
+    expect(fallback?.ninetyDays.map((point) => point.median)).toEqual([20, 30]);
+    expect(fallback?.ninetyDays[0].source).toBe("archive");
+  });
+
+  it("does not create fallback buckets when the archive has no points", () => {
+    expect(buildArchivedStatsBuckets([], NOW)).toBeNull();
   });
 });
