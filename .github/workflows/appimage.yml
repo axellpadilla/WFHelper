@@ -122,7 +122,12 @@ jobs:
           fi
           # AppImage only: latest-linux.yml belongs to versioned releases so an
           # installed build never auto-updates to a moving development artifact.
-          gh release upload "$TAG" \
-            "release/WFHelper-${{ steps.package.outputs.version }}-${{ steps.package.outputs.sha }}.AppImage" \
-            release/WFHelper-linux-x86_64.AppImage \
+          # Commit-stamped builds stay in the workflow artifact; the release
+          # keeps only the stable filename so pushes do not accumulate 244 MB
+          # assets.
+          for old in $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name | select(test("^WFHelper-[0-9.]+-[0-9a-f]+\\.AppImage$"))'); do
+            gh release delete-asset "$TAG" "$old" --yes --repo "$GITHUB_REPOSITORY"
+          done
+          gh release upload "$TAG" release/WFHelper-linux-x86_64.AppImage \
             --clobber --repo "$GITHUB_REPOSITORY"
