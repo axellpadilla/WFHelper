@@ -22,7 +22,14 @@ import {
 import { addToast } from "../../stores/toasts.js";
 import { worldData, worldLastFetch, worldLoading } from "../../stores/world.js";
 import type { FissureMode } from "../../stores/world.js";
-import type { CycleData, Fissure, SyndicateBounty, WorldState } from "../../types/world.js";
+import type {
+  CycleData,
+  Fissure,
+  Invasion,
+  SyndicateBounty,
+  WorldState,
+} from "../../types/world.js";
+import type { CircuitChoice } from "../world.js";
 import { readStorage, writeStorage } from "../persistence.js";
 
 const WORLD_REFRESH_MS = 120_000;
@@ -70,6 +77,43 @@ export const FISSURE_MODE_OPTIONS: ReadonlyArray<{ value: FissureMode; labelKey:
 export type FissureTierFilter = "all" | "Lith" | "Meso" | "Neo" | "Axi" | "Requiem" | "Omnia";
 export const fissureTierFilter = writable<FissureTierFilter>("all");
 export const fissureSearchQuery = writable("");
+export const invasionSearchQuery = writable("");
+
+/** Narrows current or upcoming Circuit choices to items not in the inventory. */
+export function filterUnownedCircuitChoices<T extends Pick<CircuitChoice, "owned">>(
+  choices: readonly T[],
+  unownedOnly: boolean,
+): T[] {
+  return unownedOnly ? choices.filter((choice) => !choice.owned) : [...choices];
+}
+
+function invasionRewardText(invasion: Invasion): string {
+  return [invasion.attacker.reward, invasion.defender.reward]
+    .flatMap((reward) => {
+      if (!reward) return [];
+      return [
+        ...(reward.items ?? []),
+        ...(reward.countedItems ?? []).flatMap((item) => [item.type, String(item.count)]),
+        ...(reward.credits > 0 ? [String(reward.credits)] : []),
+      ];
+    })
+    .join(" ");
+}
+
+/** Searches active invasion reward names, nodes, and both factions. */
+export function filterActiveInvasions(invasions: readonly Invasion[], search: string): Invasion[] {
+  const query = search.trim().toLocaleLowerCase();
+  if (!query) return [...invasions];
+  return invasions.filter((invasion) => {
+    const fields = [
+      invasion.node,
+      invasion.attacker.faction,
+      invasion.defender.faction,
+      invasionRewardText(invasion),
+    ];
+    return fields.some((field) => field.toLocaleLowerCase().includes(query));
+  });
+}
 
 async function fetchWorldData(force: boolean = false): Promise<void> {
   if (get(worldLoading)) return;

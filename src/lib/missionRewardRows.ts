@@ -142,6 +142,35 @@ export function missionStatusText(
 export const MISSION_PERIODS = ["today", "7d", "30d", "all"] as const;
 export type MissionPeriod = (typeof MISSION_PERIODS)[number];
 
+export const MISSION_SORTS = ["newest", "platinum", "rewards"] as const;
+export type MissionSort = (typeof MISSION_SORTS)[number];
+
+interface MissionSortMetrics {
+  endedAt: number;
+  platinum: number;
+  rewardCount: number;
+}
+
+/** Sorts loaded mission summaries without mutating the paging order. */
+export function sortMissionSummaries<T>(
+  summaries: readonly T[],
+  sort: MissionSort,
+  metricsOf: (summary: T) => MissionSortMetrics,
+): T[] {
+  return summaries
+    .map((summary, index) => ({ summary, index, metrics: metricsOf(summary) }))
+    .sort((a, b) => {
+      const primary =
+        sort === "platinum"
+          ? b.metrics.platinum - a.metrics.platinum
+          : sort === "rewards"
+            ? b.metrics.rewardCount - a.metrics.rewardCount
+            : 0;
+      return primary || b.metrics.endedAt - a.metrics.endedAt || a.index - b.index;
+    })
+    .map(({ summary }) => summary);
+}
+
 const DAY_MS = 86_400_000;
 
 export function localMidnight(now: number): number {

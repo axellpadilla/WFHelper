@@ -86,6 +86,7 @@
   let draftLabel = $state("");
   let draftPeriod = $state<TrackerUserPeriod>("daily");
   let query = $state("");
+  let incompleteOnly = $state(false);
 
   const nowMs = $derived($clock);
   const now = $derived(new Date(nowMs));
@@ -338,6 +339,7 @@
       (row) =>
         row.group === group &&
         (editing || row.kind === "header" || !row.hidden) &&
+        (!incompleteOnly || row.kind === "header" || !row.done) &&
         (row.kind === "header" || matchesQuery(row, needle)),
     );
     // A header left with no task under it would render as a stray label.
@@ -703,6 +705,14 @@
         data-tracker-search
         bind:value={query}
       />
+      <button
+        class="btn-secondary btn-sm"
+        data-incomplete-only
+        aria-pressed={incompleteOnly}
+        onclick={() => (incompleteOnly = !incompleteOnly)}
+      >
+        {$tr("dailies.incompleteOnly")}
+      </button>
       <button
         class="btn-secondary btn-sm"
         data-tracker-edit

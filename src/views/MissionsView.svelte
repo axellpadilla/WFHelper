@@ -23,12 +23,15 @@
     localMidnight,
     matchRewardItemTypes,
     MISSION_PERIODS,
+    MISSION_SORTS,
     missionName,
     missionPeriodStart,
     missionStatusText,
     missionTypeLabel,
     rewardRowTotals,
+    sortMissionSummaries,
     type MissionPeriod,
+    type MissionSort,
     type PageLoadMode,
     type RewardRowSources,
   } from "../lib/missionRewardRows.js";
@@ -59,6 +62,7 @@
   let failedFilterChange = $state(false);
   let loadingMore = $state(false);
   let missionType = $state("");
+  let missionSort = $state<MissionSort>("newest");
   let search = $state("");
   let appliedSearch = $state("");
   let expanded = $state<Record<string, boolean>>({});
@@ -89,6 +93,13 @@
       const rows = buildRewardRows(summary.items, sources);
       return { summary, rows, totals: rewardRowTotals(rows) };
     }),
+  );
+  const sortedEntries = $derived(
+    sortMissionSummaries(entries, missionSort, (entry) => ({
+      endedAt: entry.summary.endedAt,
+      platinum: entry.totals.platinum,
+      rewardCount: entry.summary.items.reduce((count, item) => count + item.count, 0),
+    })),
   );
   const VALUE_CELLS: {
     attr: string;
@@ -333,6 +344,18 @@
             {/each}
           </select>
         </label>
+        <label class="flex flex-col gap-1">
+          <span class="uppercase tracking-wide text-text-muted">{$tr("common.sort")}</span>
+          <select
+            class="rounded border border-border bg-bg-raised px-2 py-1 text-text-primary outline-none focus:border-accent"
+            bind:value={missionSort}
+            data-missions-sort
+          >
+            {#each MISSION_SORTS as sort (sort)}
+              <option value={sort}>{$tr(`missions.sort.${sort}`)}</option>
+            {/each}
+          </select>
+        </label>
         <div class="min-w-[14rem] flex-1" data-missions-search>
           <SearchBox
             value={search}
@@ -377,7 +400,7 @@
         </ThemedPanel>
       {:else}
         <ul class="m-0 flex list-none flex-col gap-2 p-0" data-missions-list>
-          {#each entries as entry (entry.summary.id)}
+          {#each sortedEntries as entry (entry.summary.id)}
             {@const summary = entry.summary}
             {@const open = expanded[summary.id] === true}
             {@const expandable = entry.rows.length > 0 || summary.missionCount > 1}
