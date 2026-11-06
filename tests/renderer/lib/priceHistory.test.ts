@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { MARKET_STATS_MAX_POINTS } from "../../../config/shared/marketStats";
+import { MARKET_STATS_MAX_POINTS } from "../../../config/shared/marketStats.js";
 import {
   buildArchivedStatsBuckets,
   fetchBackendPriceHistory,
   isMarketStatsCacheFresh,
   MARKET_STATS_CACHE_TTL_MS,
   parsePriceHistoryRows,
-} from "../../../src/lib/wfm/priceHistory";
+} from "../../../src/lib/wfm/priceHistory.js";
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }));
-vi.mock("../../../src/lib/wfm/backendLite", () => ({ fetchBackendRaw: mocks.fetch }));
+vi.mock("../../../src/lib/wfm/backendLite.js", () => ({ fetchBackendRaw: mocks.fetch }));
 
 const NOW = Date.UTC(2026, 8, 8, 12);
 const DAY = 86_400_000;

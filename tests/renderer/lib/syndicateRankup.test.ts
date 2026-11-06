@@ -4,6 +4,7 @@ import { aggregateComponentOwnership } from "../../../config/shared/componentOwn
 import { withoutFoundryPending } from "../../../config/shared/foundryPending.js";
 import {
   aggregateNeeds,
+  allocateStepOwnership,
   alignmentConflicts,
   dailyStandingCap,
   filterMissingRequirements,
@@ -331,6 +332,21 @@ describe("aggregateNeeds", () => {
     expect(needs.items).toEqual([]);
     expect(needs.standing).toEqual([]);
     expect(needs.credits.needed).toBe(0);
+  });
+});
+
+describe("allocateStepOwnership", () => {
+  it("consumes item and credit balances cumulatively across rank-up steps", () => {
+    const redVeilSteps = planSteps(INVENTORY, RED_VEIL, 2);
+    const plans: SyndicateGoalPlan[] = [{ meta: RED_VEIL, targetLevel: 2, steps: redVeilSteps }];
+    const ownership = new Map([[FORMA, 1]]);
+    const allocated = allocateStepOwnership(plans, ownership, 120000).get(RED_VEIL.tag)!;
+
+    expect(allocated.get(0)?.items).toEqual([{ item: item(FORMA, 1, "Forma"), owned: 1 }]);
+    expect(allocated.get(2)?.items).toEqual([{ item: item(FORMA, 1, "Forma"), owned: 0 }]);
+    expect(allocated.get(0)?.credits).toBe(120000);
+    expect(allocated.get(1)?.credits).toBe(70000);
+    expect(allocated.get(2)?.credits).toBe(30000);
   });
 });
 

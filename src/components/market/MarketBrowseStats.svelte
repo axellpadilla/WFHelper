@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
 
   import type { MarketStatPoint } from "../../../config/shared/marketStats.js";
@@ -105,6 +106,7 @@
   let hoverIndex: number | null = null;
   let containerWidth = 0;
   let requestToken = 0;
+  let now = Date.now();
 
   let showCandles = false;
   let showMedian = true;
@@ -113,6 +115,13 @@
   let showDonchian = true;
 
   $: void load(slug);
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      now = Date.now();
+    }, 30_000);
+    return () => clearInterval(timer);
+  });
 
   async function load(target: string | null, forceRefresh = false): Promise<void> {
     const token = ++requestToken;
@@ -588,9 +597,9 @@
     return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`;
   }
 
-  function formatStatsAge(time: number | null, code: LocaleCode): string {
+  function formatStatsAge(time: number | null, now: number, code: LocaleCode): string {
     if (time == null) return "";
-    const age = Math.max(0, Date.now() - time);
+    const age = Math.max(0, now - time);
     const relative = new Intl.RelativeTimeFormat(code, { numeric: "auto", style: "short" });
     if (age < 60_000) return relative.format(-Math.floor(age / 1_000), "second");
     if (age < 3_600_000) return relative.format(-Math.floor(age / 60_000), "minute");
@@ -639,7 +648,7 @@
     {/if}
     {#if state === "ready"}
       <div class="ml-auto flex items-center gap-2">
-        <span class="text-xs text-text-muted">{formatStatsAge(statsFetchedAt, $locale)}</span>
+        <span class="text-xs text-text-muted">{formatStatsAge(statsFetchedAt, now, $locale)}</span>
         <button
           class="btn-secondary btn-sm px-2 py-1 text-xs"
           title={$tr("common.refresh")}

@@ -57,6 +57,11 @@ export interface SyndicateGoalPlan {
   steps: RankUpStep[];
 }
 
+interface RankUpStepOwnership {
+  credits: number;
+  items: Array<{ item: SyndicateSacrificeItem; owned: number }>;
+}
+
 interface NeededItem {
   itemType: string;
   name: string;
@@ -215,6 +220,34 @@ export function planSteps(
     previousThreshold = threshold;
   }
   return steps;
+}
+
+/** Allocate the current balances to steps in plan order, so later steps only
+ *  see what earlier rank-ups leave available. */
+export function allocateStepOwnership(
+  plans: readonly SyndicateGoalPlan[],
+  owned: ReadonlyMap<string, number>,
+  creditsOwned: number,
+): Map<string, Map<number, RankUpStepOwnership>> {
+  const remainingItems = new Map(owned);
+  let remainingCredits = Math.max(0, creditsOwned);
+  const allocations = new Map<string, Map<number, RankUpStepOwnership>>();
+
+  for (const plan of plans) {
+    const planAllocations = new Map<number, RankUpStepOwnership>();
+    for (const step of plan.steps) {
+      const items = step.items.map((item) => {
+        const available = Math.max(0, remainingItems.get(item.itemType) ?? 0);
+        remainingItems.set(item.itemType, Math.max(0, available - item.count));
+        return { item, owned: available };
+      });
+      planAllocations.set(step.level, { credits: remainingCredits, items });
+      remainingCredits = Math.max(0, remainingCredits - step.credits);
+    }
+    allocations.set(plan.meta.tag, planAllocations);
+  }
+
+  return allocations;
 }
 
 /** Everything the selected goals still cost: credits, items and standing per pool.

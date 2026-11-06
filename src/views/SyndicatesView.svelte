@@ -7,6 +7,7 @@
   import { buildParsedItemFromDb } from "../lib/parsedItemFromDb.js";
   import {
     aggregateNeeds,
+    allocateStepOwnership,
     alignmentConflicts,
     filterMissingRequirements,
     planSteps,
@@ -88,20 +89,11 @@
   );
 
   const totals = $derived(aggregateNeeds(plans, inv, owned));
+  const stepOwnership = $derived(allocateStepOwnership(plans, owned, totals.credits.owned));
   let missingOnly = $state(false);
   const totalItems = $derived(missingOnly ? filterMissingRequirements(totals.items) : totals.items);
   const conflicts = $derived(alignmentConflicts(plans.map((plan) => plan.meta)));
   const hasGoals = $derived(Object.keys($syndicateGoals).length > 0);
-
-  function missingStepItems(items: RankUpStep["items"]): RankUpStep["items"] {
-    return filterMissingRequirements(
-      items.map((item) => ({
-        item,
-        needed: item.count,
-        owned: owned.get(item.itemType) ?? 0,
-      })),
-    ).map(({ item }) => item);
-  }
 
   function openItem(itemType: string): void {
     const entry = db[itemType];
@@ -220,6 +212,7 @@
                     {/if}
 
                     {#each card.steps as step (step.level)}
+                      {@const allocation = stepOwnership.get(card.meta.tag)?.get(step.level)}
                       <div
                         class="flex flex-col gap-1 border-t border-[color:var(--ui-panel-border)] pt-2"
                         data-syndicate-step={step.level}
@@ -248,22 +241,18 @@
 
                         <div class="flex flex-wrap items-start gap-x-2 gap-y-2">
                           {#if step.credits > 0}
-                            {@const creditsMissing =
-                              filterMissingRequirements([
-                                { needed: step.credits, owned: totals.credits.owned },
-                              ]).length > 0}
+                            {@const creditsMissing = (allocation?.credits ?? 0) < step.credits}
                             {#if !missingOnly || creditsMissing}
                               <ItemTile
                                 tileKey="credits"
                                 imageUrl={CREDITS_ICON_URL}
                                 label={$tr("common.credits")}
                                 count={formatNumber(step.credits, $locale)}
-                                enough={totals.credits.owned >= step.credits}
+                                enough={(allocation?.credits ?? 0) >= step.credits}
                               />
                             {/if}
                           {/if}
-                          {#each missingOnly ? missingStepItems(step.items) : step.items as item (item.itemType)}
-                            {@const have = owned.get(item.itemType) ?? 0}
+                          {#each (allocation?.items ?? []).filter(({ item, owned: have }) => !missingOnly || have < item.count) as { item, owned: have } (item.itemType)}
                             {@const label = db[item.itemType]?.displayName ?? item.name}
                             <ItemTile
                               tileKey={item.itemType}
