@@ -307,6 +307,24 @@
     }
   }
 
+  function setRelicPlatAtLeast(text: string): void {
+    platAtLeastText = text;
+    const trimmed = text.trim();
+    const platAtLeast = trimmed === "" ? 0 : Number(trimmed);
+    if (Number.isFinite(platAtLeast) && platAtLeast >= 0) {
+      setRelicFilter({ platAtLeast });
+    }
+  }
+
+  function setRelicDucatsAtLeast(text: string): void {
+    ducatsAtLeastText = text;
+    const trimmed = text.trim();
+    const ducatsAtLeast = trimmed === "" ? 0 : Number(trimmed);
+    if (Number.isFinite(ducatsAtLeast) && ducatsAtLeast >= 0) {
+      setRelicFilter({ ducatsAtLeast });
+    }
+  }
+
   function setRelicVaultedMode(event: Event): void {
     setRelicFilter({
       vaultedMode: (event.currentTarget as HTMLSelectElement).value as RelicVaultedMode,
@@ -340,6 +358,9 @@
   let rewardIconBySlug: Record<string, string> = {};
   let rewardIconByName: Record<string, string> = {};
   let goldAtLeastText = $relicViewState.goldAtLeast > 0 ? String($relicViewState.goldAtLeast) : "";
+  let platAtLeastText = $relicViewState.platAtLeast > 0 ? String($relicViewState.platAtLeast) : "";
+  let ducatsAtLeastText =
+    $relicViewState.ducatsAtLeast > 0 ? String($relicViewState.ducatsAtLeast) : "";
   let overlaySyncReady = false;
   let overlaySyncTimer: ReturnType<typeof setTimeout> | null = null;
   let lastOverlaySyncSignature: string | null = null;
@@ -834,6 +855,38 @@
               />
             </label>
 
+            <label class="shared-filter-sort" title={$tr("relics.platAtLeastTitle")}>
+              <span>{$tr("relics.platAtLeastLabel")}</span>
+              <input
+                type="number"
+                inputmode="decimal"
+                min="0"
+                step="any"
+                class="shared-filter-select relic-threshold-input"
+                data-relic-plat-at-least
+                placeholder={$tr("relics.minOwned.any")}
+                value={platAtLeastText}
+                on:input={(event) => setRelicPlatAtLeast(event.currentTarget.value)}
+                on:contextmenu|preventDefault={() => setRelicPlatAtLeast("")}
+              />
+            </label>
+
+            <label class="shared-filter-sort" title={$tr("relics.ducatsAtLeastTitle")}>
+              <span>{$tr("relics.ducatsAtLeastLabel")}</span>
+              <input
+                type="number"
+                inputmode="numeric"
+                min="0"
+                step="any"
+                class="shared-filter-select relic-threshold-input"
+                data-relic-ducats-at-least
+                placeholder={$tr("relics.minOwned.any")}
+                value={ducatsAtLeastText}
+                on:input={(event) => setRelicDucatsAtLeast(event.currentTarget.value)}
+                on:contextmenu|preventDefault={() => setRelicDucatsAtLeast("")}
+              />
+            </label>
+
             <label class="shared-filter-sort" title={$tr("relics.vaultedTitle")}>
               <span>{$tr("relics.vaultedLabel")}</span>
               <select
@@ -916,15 +969,18 @@
 </section>
 
 <style>
-  /* The select class brings the look; the number input needs neither the arrow gap nor 8rem. */
-  .relic-gold-input {
+  /* The select class brings the look; number inputs need neither the arrow gap nor 8rem. */
+  .relic-gold-input,
+  .relic-threshold-input {
     min-width: 0;
     width: 4.5rem;
     padding-right: 0.5rem;
     color: var(--text-primary);
   }
   .relic-gold-input::-webkit-inner-spin-button,
-  .relic-gold-input::-webkit-outer-spin-button {
+  .relic-gold-input::-webkit-outer-spin-button,
+  .relic-threshold-input::-webkit-inner-spin-button,
+  .relic-threshold-input::-webkit-outer-spin-button {
     appearance: none;
     margin: 0;
   }

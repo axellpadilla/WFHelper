@@ -60,6 +60,10 @@ export interface RelicPlannerFilters {
   ownedAbove: number;
   /** Hides relics whose Rare reward sells for less than this; 0 is off. */
   goldAtLeast: number;
+  /** Hides relics whose platinum expected value is less than this; 0 is off. */
+  platAtLeast: number;
+  /** Hides relics whose ducat expected value is less than this; 0 is off. */
+  ducatsAtLeast: number;
   sortMode: RelicSortMode;
   sortDirection: RelicSortDirection;
 }
@@ -72,6 +76,8 @@ export const DEFAULT_RELIC_PLANNER_FILTERS: RelicPlannerFilters = {
   qualityMode: "owned",
   ownedAbove: 0,
   goldAtLeast: 0,
+  platAtLeast: 0,
+  ducatsAtLeast: 0,
   sortMode: "tier",
   sortDirection: "asc",
 };
@@ -216,6 +222,10 @@ export function selectRelicPlannerRows<T extends RelicPlannerRow>(
     if (filters.ownedAbove > 0 && row.ownedTotal <= filters.ownedAbove) return false;
     if (filters.goldAtLeast > 0 && (row.gold == null || row.gold < filters.goldAtLeast))
       return false;
+    if (filters.platAtLeast > 0 && (row.plat === null || row.plat < filters.platAtLeast))
+      return false;
+    if (filters.ducatsAtLeast > 0 && (row.ducat === null || row.ducat < filters.ducatsAtLeast))
+      return false;
     if (filters.search && !hooks.matchesSearch(row)) return false;
     if (filters.containsNeededReward && !hooks.hasNeededReward(row)) return false;
     return true;
@@ -261,6 +271,10 @@ function goldAtLeastOr(value: unknown, fallback: number): number {
     : fallback;
 }
 
+function nonNegativeFiniteOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 /** Untrusted IPC payload -> filters, every field falling back to the state the
  *  overlay already runs on. */
 function normalizeRelicPlannerFilters(
@@ -282,6 +296,8 @@ function normalizeRelicPlannerFilters(
     qualityMode: oneOf(record.qualityMode, QUALITY_MODE_CHOICES, fallback.qualityMode),
     ownedAbove: ownedAboveOr(record.ownedAbove, fallback.ownedAbove),
     goldAtLeast: goldAtLeastOr(record.goldAtLeast, fallback.goldAtLeast),
+    platAtLeast: nonNegativeFiniteOr(record.platAtLeast, fallback.platAtLeast),
+    ducatsAtLeast: nonNegativeFiniteOr(record.ducatsAtLeast, fallback.ducatsAtLeast),
     sortMode: oneOf(record.sortMode, SORT_MODES, fallback.sortMode),
     sortDirection: oneOf(record.sortDirection, SORT_DIRECTIONS, fallback.sortDirection),
   };

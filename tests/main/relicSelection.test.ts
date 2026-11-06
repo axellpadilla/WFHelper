@@ -1143,6 +1143,20 @@ describe("relic selection planner", () => {
     expect(await labels()).toEqual(["1x Lith Charlie Intact"]);
   });
 
+  it("applies the pushed platinum EV threshold", async () => {
+    const { push, labels } = makePlannerFilterController();
+
+    push({ platAtLeast: 26, sortMode: "name" });
+    expect(await labels()).toEqual(["1x Lith Alpha Radiant"]);
+  });
+
+  it("applies the pushed ducat EV threshold", async () => {
+    const { push, labels } = makePlannerFilterController();
+
+    push({ ducatsAtLeast: 21, sortMode: "name" });
+    expect(await labels()).toEqual(["1x Lith Alpha Radiant"]);
+  });
+
   it("counts every owned grade for the owned sort, like the planner card does", async () => {
     const { push, labels } = makePlannerFilterController();
     push({ sortMode: "owned", sortDirection: "desc" });
