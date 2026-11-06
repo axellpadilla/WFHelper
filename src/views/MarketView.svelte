@@ -175,6 +175,8 @@
   ];
 
   const marketFilters = sharedFilters("market");
+  type OrderVisibilityFilter = "all" | "visible" | "hidden";
+  let orderVisibilityFilter: OrderVisibilityFilter = "all";
   const hydration = getInventoryHydrationController();
   const hydrationMetrics = hydration.metricsByKey;
 
@@ -945,7 +947,13 @@
       : [],
   );
   $: filteredOrderRows = applySharedFiltersAndSort(
-    activeOrders.map((order) => normalizeOrderForFilter(order, $parsedItems, $wfmItems)),
+    activeOrders
+      .filter(
+        (order) =>
+          orderVisibilityFilter === "all" ||
+          (orderVisibilityFilter === "visible" ? order.visible === true : order.visible !== true),
+      )
+      .map((order) => normalizeOrderForFilter(order, $parsedItems, $wfmItems)),
     $marketFilters,
   );
   $: visibleOrderIds = new Set(filteredOrderRows.map((order) => order.id));
@@ -960,7 +968,11 @@
   $: marketOrderBaseItems = filteredOrderRows.map((order) =>
     buildMarketOrderInventoryItem(order, $parsedItems, $wfmItems),
   );
-  $: marketOrderViewItems = buildInventoryViewItems(marketOrderBaseItems, $hydrationMetrics);
+  $: marketOrderViewItems = buildInventoryViewItems(
+    marketOrderBaseItems,
+    $hydrationMetrics,
+    $wfmItems,
+  );
   $: marketOrderItemsByOrderId = new Map(
     marketOrderViewItems.map((item) => [item.sourceOrderId, item]),
   );
@@ -1192,14 +1204,35 @@
             </button>
           </div>
         {:else if sectionId === "market.orders" || sectionId === "market.rivens"}
-          <SharedFilterBar
-            scope="market"
-            singleLine={true}
-            showBasic={true}
-            showAdvanced={false}
-            basicVariant="quick"
-            sortOptions={isRivensTab ? rivenContractSortOptions : marketSortOptions}
-          />
+          <div class="flex flex-wrap items-center gap-2">
+            <SharedFilterBar
+              scope="market"
+              singleLine={true}
+              showBasic={true}
+              showAdvanced={false}
+              basicVariant="quick"
+              sortOptions={isRivensTab ? rivenContractSortOptions : marketSortOptions}
+            />
+            {#if isOrdersTab($marketViewState.typeTab)}
+              <div
+                class="filter-tabs shrink-0"
+                role="group"
+                aria-label={$tr("market.visibilityFilter")}
+                data-market-visibility-filter
+              >
+                {#each [{ value: "all" as const, label: $tr("common.all") }, { value: "visible" as const, label: $tr("market.visible") }, { value: "hidden" as const, label: $tr("common.hidden") }] as option (option.value)}
+                  <button
+                    type="button"
+                    class="filter-tab"
+                    class:active={orderVisibilityFilter === option.value}
+                    aria-pressed={orderVisibilityFilter === option.value}
+                    data-market-visibility={option.value}
+                    on:click={() => (orderVisibilityFilter = option.value)}>{option.label}</button
+                  >
+                {/each}
+              </div>
+            {/if}
+          </div>
 
           {#if !isRivensTab && (filteredOrderRows.length > 0 || $marketSelected.size > 0)}
             <!-- The inline filter bar drops its bottom margin for the flex rows the other

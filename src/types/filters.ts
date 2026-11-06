@@ -17,6 +17,7 @@ export type SharedSortKey =
   | "name"
   | "owned"
   | "platinum"
+  | "set-delta"
   | "ducats"
   | "amount"
   | "count"

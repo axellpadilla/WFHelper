@@ -42,7 +42,10 @@
     ).filter((item) => isCountedForValue(item, scope)),
   );
   const totals = $derived(
-    computeInventoryValueTotals(buildInventoryViewItems(baseRows, $hydrationMetrics), scope),
+    computeInventoryValueTotals(
+      buildInventoryViewItems(baseRows, $hydrationMetrics, $wfmItems),
+      scope,
+    ),
   );
 </script>
 

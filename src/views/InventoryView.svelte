@@ -183,6 +183,10 @@
     ["complete_sets", $tr("filters.completeSets")],
     ["missing_parts", $tr("filters.partsToComplete")],
   ] as Array<[SharedSortKey, string]>;
+  $: FULL_SET_SORT_OPTIONS = [
+    ...FULL_SORT_OPTIONS,
+    ["set-delta", $tr("filters.setDelta")],
+  ] as Array<[SharedSortKey, string]>;
   $: PRICED_SORT_OPTIONS = [
     ["name", $tr("common.name")],
     ["platinum", $tr("common.platinum")],
@@ -200,7 +204,7 @@
     everything: DUCAT_SORT_OPTIONS,
     all_parts: FULL_SORT_OPTIONS,
     relics: DUCAT_SORT_OPTIONS,
-    full_sets: FULL_SORT_OPTIONS,
+    full_sets: FULL_SET_SORT_OPTIONS,
     resources: RESOURCE_SORT_OPTIONS,
   } as Partial<Record<InventoryFilterTab, Array<[SharedSortKey, string]>>>;
 
@@ -562,7 +566,7 @@
       orderedSubtypes,
     ),
   ];
-  $: tabItems = buildInventoryViewItems(tabBaseItems, $hydrationMetrics);
+  $: tabItems = buildInventoryViewItems(tabBaseItems, $hydrationMetrics, $wfmItems);
   $: relicSearchKeywordIndex = buildRelicSearchKeywordIndex($relicDb);
   $: searchableTabItems =
     filter !== "relics" && filter !== "everything"
@@ -621,7 +625,7 @@
     orderedSubtypes,
   ).filter((item) => isCountedForValue(item, valueScope));
   // Rebuilt on every metric flush, so the totals below re-walk with it.
-  $: valueInventoryItems = buildInventoryViewItems(valueBaseItems, $hydrationMetrics);
+  $: valueInventoryItems = buildInventoryViewItems(valueBaseItems, $hydrationMetrics, $wfmItems);
   // The platinum floor belongs to the totals, not the prefilter above: base rows
   // carry no median yet, so gating there would drop everything on first paint.
   $: inventoryValueTotals = computeInventoryValueTotals(

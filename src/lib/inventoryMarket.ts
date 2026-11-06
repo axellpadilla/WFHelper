@@ -53,6 +53,8 @@ export interface InventoryBaseItem extends ParsedItem {
 
 export interface InventoryViewItem extends InventoryBaseItem {
   platinum: number | null;
+  partsPlatinum: number | null;
+  setPriceDelta: number | null;
   platinumR0: number | null;
   platinumRmax: number | null;
   wtsR0: number | null;
@@ -65,6 +67,9 @@ export interface InventoryViewItem extends InventoryBaseItem {
   usesFallbackArt: boolean;
   equippedSummary: string | null;
 }
+
+/** Market-facing inventory metrics, including the Full Set parts comparison. */
+export type InventoryMarketItem = InventoryViewItem;
 
 export interface ItemMetrics {
   platinum: number | null;
@@ -180,6 +185,36 @@ function resolveCachedRankPlatinum(slug: string | null | undefined, rank: number
   const entry = getCachedPriceState(rendererPriceCacheKey(slug, rank));
   if (!entry || entry.status !== "ok") return null;
   return toFiniteNumber(entry.median);
+}
+
+function resolvePartsPlatinum(item: InventoryBaseItem, lookup: WfmItemsLookup): number | null {
+  if (item.inventoryGroup !== "full_sets" || item.components.length === 0) return null;
+
+  let partsPlatinum = 0;
+  let pricedComponents = 0;
+  for (const component of item.components) {
+    if (component.tradable === false) continue;
+
+    const lookupByGameRef = component.uniqueName
+      ? getLookupByGameRef(component.uniqueName, lookup)
+      : null;
+    const lookupByName = getLookupByName(component.name, lookup);
+    const slug = sanitizeWfmSlug(
+      lookupByGameRef?.url_name || lookupByName?.url_name || toMarketSlug(component.name) || "",
+    );
+    const price = resolveCachedRankPlatinum(slug, 0);
+    if (price == null || price <= 0) return null;
+
+    const rawRequired = component.itemCount;
+    const required =
+      typeof rawRequired === "number" && Number.isFinite(rawRequired) && rawRequired > 0
+        ? rawRequired
+        : 1;
+    partsPlatinum += price * required;
+    pricedComponents += 1;
+  }
+
+  return pricedComponents > 0 ? Number(partsPlatinum.toFixed(2)) : null;
 }
 
 function isSetSlug(slug: string | null | undefined): boolean {
@@ -509,8 +544,9 @@ export function buildBaseInventoryItems(
 export function buildInventoryViewItems<T extends InventoryBaseItem>(
   baseItems: T[],
   metricsByKey: Record<string, ItemMetrics>,
-): (T & InventoryViewItem)[] {
-  return baseItems.map<T & InventoryViewItem>((item) => {
+  wfmLookup: WfmItemsLookup = {},
+): (T & InventoryMarketItem)[] {
+  return baseItems.map<T & InventoryMarketItem>((item) => {
     const metric = metricsByKey[item.internalName] || null;
     const isRankedListingItem = isRankedGroup(item.inventoryGroup);
     const itemMaxRank =
@@ -554,6 +590,14 @@ export function buildInventoryViewItems<T extends InventoryBaseItem>(
     const platinumRaw = metric?.platinum ?? null;
     const platinumFromMetrics = toFiniteNumber(platinumRaw);
     const platinum = platinumFromMetrics ?? selectedRankPlatinum ?? resolveCachedPlatinum(item);
+    const partsPlatinum = resolvePartsPlatinum(item, wfmLookup);
+    const setPriceDelta =
+      item.inventoryGroup === "full_sets" &&
+      platinum != null &&
+      platinum > 0 &&
+      partsPlatinum != null
+        ? Number((platinum - partsPlatinum).toFixed(2))
+        : null;
     const ducatsRaw = item.ducats ?? metric?.ducats ?? null;
     const ducats = toFiniteNumber(ducatsRaw);
     const ducatonator =
@@ -580,6 +624,8 @@ export function buildInventoryViewItems<T extends InventoryBaseItem>(
     return {
       ...item,
       platinum,
+      partsPlatinum,
+      setPriceDelta,
       platinumR0: isRankedListingItem ? metricPlatinumR0 : null,
       platinumRmax: isRankedListingItem ? metricPlatinumRmax : null,
       wtsR0: isRankedListingItem ? (metricWtsR0 ?? cachedOrdersR0?.wts ?? null) : null,

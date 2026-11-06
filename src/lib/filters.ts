@@ -12,6 +12,7 @@ import type { MasteryStatus, PartType } from "../types/inventory.js";
 // read ascending. Every view derives its default direction from this.
 const DESCENDING_DEFAULT_SORT_KEYS = new Set<string>([
   "platinum",
+  "set-delta",
   "ducats",
   "amount",
   "count",
@@ -57,6 +58,7 @@ interface FilterableItem {
   maxRank?: number;
   status?: MasteryStatus | string;
   platinum?: number | null;
+  setPriceDelta?: number | null;
   ducats?: number | null;
   amount?: number | null;
   combinedAmount?: number | null;
@@ -181,6 +183,9 @@ function toMetric(item: FilterableItem, sortBy: SharedFiltersState["sortBy"]): n
       return item.ducats / item.platinum;
     }
     return null;
+  }
+  if (sortBy === "set-delta") {
+    return typeof item.setPriceDelta === "number" ? item.setPriceDelta : null;
   }
   if (sortBy === "complete_sets") {
     if (typeof item.completeSets === "number") return item.completeSets;

@@ -47,6 +47,7 @@
   type BrowseSide = "sell" | "buy";
   type ContentView = "orders" | "stats";
   type RankFilter = "all" | "maxed";
+  type OrderBookSort = "price" | "quantity";
   const SUGGESTION_LIST_ID = "browse-suggestion-list";
   const AUTO_REFRESH_MS = 45_000;
   const FEEDBACK_TTL_MS = 2_500;
@@ -76,6 +77,7 @@
   // Default to in-game sellers - the only ones you can actually trade with.
   let statusFilter: SellerStatusFilter = "ingame";
   let rankFilter: RankFilter = "all";
+  let orderBookSort: OrderBookSort = "price";
   let subtype = "regular";
   const modVariants = new SvelteMap<string, string[]>();
   let subtypeOptions: string[] = [];
@@ -404,7 +406,8 @@
 
   $: sideEntries = side === "sell" ? (orderBook?.sell ?? []) : (orderBook?.buy ?? []);
   $: filteredRows = filterRows(sideEntries, statusFilter, rankFilter, minPrice, maxPrice);
-  $: rows = filteredRows.slice(0, rowLimit);
+  $: sortedRows = sortRows(filteredRows, orderBookSort);
+  $: rows = sortedRows.slice(0, rowLimit);
 
   function filterRows(
     entries: OrderBookEntry[],
@@ -420,6 +423,11 @@
     if (min != null && min > 0) out = out.filter((entry) => entry.unitPlatinum >= min);
     if (max != null && max > 0) out = out.filter((entry) => entry.unitPlatinum <= max);
     return out;
+  }
+
+  function sortRows(entries: OrderBookEntry[], sort: OrderBookSort): OrderBookEntry[] {
+    if (sort === "price") return entries;
+    return [...entries].sort((a, b) => b.quantity - a.quantity || a.unitPlatinum - b.unitPlatinum);
   }
 
   function formatUpdatedLabel(
@@ -843,6 +851,20 @@
               on:click={() => (statusFilter = "all")}>{$translate("common.all")}</button
             >
           </div>
+        </div>
+        <div class="grid gap-1">
+          <label for="browse-order-sort" class="text-xs uppercase tracking-[0.05em] text-text-muted"
+            >{$translate("common.sort")}</label
+          >
+          <select
+            id="browse-order-sort"
+            class="shared-filter-select"
+            bind:value={orderBookSort}
+            data-browse-order-sort
+          >
+            <option value="price">{$translate("common.price")}</option>
+            <option value="quantity">{$translate("orderbook.sort.quantityHighToLow")}</option>
+          </select>
         </div>
         {#if ranked}
           <div class="grid gap-1">

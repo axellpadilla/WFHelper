@@ -856,6 +856,68 @@ describe("inventoryMarket view mapping", () => {
     expect(mapped.platinum).toBe(8);
   });
 
+  it("computes Full Set parts value and bundle delta from cached component prices", () => {
+    const set = makeBaseItem({
+      name: "Sample Prime Set",
+      internalName: "/Lotus/SamplePrime#set",
+      inventoryGroup: "full_sets",
+      category: "full_sets",
+      categoryLabel: "Full Set",
+      marketSlug: "sample_prime_set",
+      components: [
+        { name: "Sample Prime Blueprint", tradable: true, itemCount: 1 },
+        { name: "Sample Prime Chassis", tradable: true, itemCount: 2 },
+        { name: "Untradable Component", tradable: false, itemCount: 9 },
+      ],
+    });
+    setCachedPrice("sample_prime_blueprint:rank-v3:r0", 15);
+    setCachedPrice("sample_prime_chassis:rank-v3:r0", 10);
+
+    const [mapped] = buildInventoryViewItems([set], {
+      [set.internalName]: {
+        platinum: 50,
+        ducats: null,
+        slug: "sample_prime_set",
+        thumb: null,
+        icon: null,
+        hasPrice: true,
+        hasDucats: false,
+        hasMeta: true,
+      },
+    });
+
+    expect(mapped.partsPlatinum).toBe(35);
+    expect(mapped.setPriceDelta).toBe(15);
+  });
+
+  it("returns null partsPlatinum and setPriceDelta when any tradable component of a Full Set is unpriced", () => {
+    const set = makeBaseItem({
+      name: "Partial Price Set",
+      inventoryGroup: "full_sets",
+      components: [
+        { name: "Priced Component", tradable: true, itemCount: 3 },
+        { name: "Missing Price Component", tradable: true, itemCount: 1 },
+      ],
+    });
+    setCachedPrice("priced_component:rank-v3:r0", 4);
+
+    const [mapped] = buildInventoryViewItems([set], {
+      [set.internalName]: {
+        platinum: 50,
+        ducats: null,
+        slug: "partial_price_set",
+        thumb: null,
+        icon: null,
+        hasPrice: true,
+        hasDucats: false,
+        hasMeta: true,
+      },
+    });
+
+    expect(mapped.partsPlatinum).toBeNull();
+    expect(mapped.setPriceDelta).toBeNull();
+  });
+
   it("maps both R0 and Rmax prices for ranked cards", () => {
     const item = makeBaseItem({
       name: "Critical Delay",

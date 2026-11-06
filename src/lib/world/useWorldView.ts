@@ -1,4 +1,5 @@
 import { get } from "svelte/store";
+import { writable } from "svelte/store";
 
 import {
   cycleTimeDisplay,
@@ -65,6 +66,10 @@ export const FISSURE_MODE_OPTIONS: ReadonlyArray<{ value: FissureMode; labelKey:
   { value: "steel", labelKey: "common.steelPath" },
   { value: "railjack", labelKey: "world.railjack" },
 ];
+
+export type FissureTierFilter = "all" | "Lith" | "Meso" | "Neo" | "Axi" | "Requiem" | "Omnia";
+export const fissureTierFilter = writable<FissureTierFilter>("all");
+export const fissureSearchQuery = writable("");
 
 async function fetchWorldData(force: boolean = false): Promise<void> {
   if (get(worldLoading)) return;
@@ -286,6 +291,23 @@ export function buildFissureRows(
       tierCls: fissureTierClass(f.tier || ""),
       sourceMode: fissureSourceMode(f),
     }));
+}
+
+export function filterFissureRows<T extends Fissure>(
+  rows: T[],
+  tierFilter: FissureTierFilter,
+  searchQuery: string,
+): T[] {
+  const query = searchQuery.trim().toLowerCase();
+  return rows.filter((fissure) => {
+    if (tierFilter !== "all" && fissure.tier?.toLowerCase() !== tierFilter.toLowerCase()) {
+      return false;
+    }
+    if (!query) return true;
+    return [fissure.missionType, fissure.node, fissure.tier, fissure.enemy].some(
+      (field) => typeof field === "string" && field.toLowerCase().includes(query),
+    );
+  });
 }
 
 export function buildCycleRows({
