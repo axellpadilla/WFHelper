@@ -61,6 +61,16 @@ export function hasResolvedPrice(metric: ItemMetrics | undefined): boolean {
   return false;
 }
 
+/** No-network passes stamp hasPrice without a value; a network pass must redo
+ *  those. Real no-listing answers sit behind the price retry cooldown instead. */
+export function isPriceSettled(metric: ItemMetrics | undefined, network: boolean): boolean {
+  if (!hasResolvedPrice(metric)) return false;
+  if (!network) return true;
+  return [metric?.platinum, metric?.platinumR0, metric?.platinumRmax].some(
+    (value) => typeof value === "number" && Number.isFinite(value),
+  );
+}
+
 export function hasRankPairCoverage(
   metric: ItemMetrics | undefined,
   item: InventoryBaseItem,
