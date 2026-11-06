@@ -9,7 +9,7 @@ import {
   timeTo,
   timeToStrict,
 } from "../format.js";
-import { tr } from "../i18n.js";
+import { tr, type Translator } from "../i18n.js";
 import type { MessageKey } from "../../i18n/en.js";
 import { invoke, on } from "../ipc.js";
 import { useInterval } from "../timers.js";
@@ -89,6 +89,27 @@ async function fetchWorldData(force: boolean = false): Promise<void> {
   } finally {
     worldLoading.set(false);
   }
+}
+
+/** Formats the age of the last successfully fetched world snapshot. */
+export function formatWorldAge(lastFetch: number, nowMs: number, t: Translator): string | null {
+  if (lastFetch <= 0) return null;
+
+  const ageSeconds = Math.max(0, Math.floor((nowMs - lastFetch) / 1000));
+  if (ageSeconds < 5) return t("common.updatedJustNow");
+  if (ageSeconds < 60) return t("common.updatedSAgo", { sec: ageSeconds });
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) return t("common.updatedMAgo", { min: ageMinutes });
+
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) return t("common.updatedHAgo", { hr: ageHours });
+  return t("common.updatedDAgo", { days: Math.floor(ageHours / 24) });
+}
+
+/** Force-refreshes the world snapshot from the header control. */
+export async function refreshWorldData(): Promise<void> {
+  await fetchWorldData(true);
 }
 
 // Refcounted because the World tab and the dashboard's world widgets both need

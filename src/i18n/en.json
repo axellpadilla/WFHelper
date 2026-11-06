@@ -2294,6 +2294,7 @@
   "analysis.exportFailed": "Export failed: {error}",
   "analysis.exportUnavailable": "The exporter is not available.",
   "syndicates.hint": "Pick a target rank to see the standing, credits and items it still costs.",
+  "syndicates.missingOnly": "Missing only",
   "syndicates.noData": "Load an inventory file to see your syndicate ranks.",
   "syndicates.clearGoals": "Clear all targets",
   "syndicates.groupNormal": "Aligned syndicates",

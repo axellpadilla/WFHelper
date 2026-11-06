@@ -8,6 +8,7 @@
   import {
     aggregateNeeds,
     alignmentConflicts,
+    filterMissingRequirements,
     planSteps,
     syndicateStatus,
     type RankUpStep,
@@ -87,8 +88,20 @@
   );
 
   const totals = $derived(aggregateNeeds(plans, inv, owned));
+  let missingOnly = $state(false);
+  const totalItems = $derived(missingOnly ? filterMissingRequirements(totals.items) : totals.items);
   const conflicts = $derived(alignmentConflicts(plans.map((plan) => plan.meta)));
   const hasGoals = $derived(Object.keys($syndicateGoals).length > 0);
+
+  function missingStepItems(items: RankUpStep["items"]): RankUpStep["items"] {
+    return filterMissingRequirements(
+      items.map((item) => ({
+        item,
+        needed: item.count,
+        owned: owned.get(item.itemType) ?? 0,
+      })),
+    ).map(({ item }) => item);
+  }
 
   function openItem(itemType: string): void {
     const entry = db[itemType];
@@ -112,6 +125,17 @@
     <h2>{$tr("common.syndicates")}</h2>
     <span class="text-xs text-text-muted">{$tr("syndicates.hint")}</span>
     <div class="ml-auto flex items-center gap-2">
+      <button
+        type="button"
+        class="cursor-pointer whitespace-nowrap rounded-[var(--radius-md)] border px-2 py-1 text-xs transition-[color,border-color,background] duration-150 hover:border-accent hover:text-accent {missingOnly
+          ? 'border-accent bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] font-semibold text-accent'
+          : 'border-[color:var(--ui-control-border)] bg-bg-surface text-text-secondary'}"
+        aria-pressed={missingOnly}
+        data-syndicates-missing-only
+        onclick={() => (missingOnly = !missingOnly)}
+      >
+        {$tr("syndicates.missingOnly")}
+      </button>
       <ThemedButton disabled={!hasGoals} onClick={clearSyndicateGoals}>
         {$tr("syndicates.clearGoals")}
       </ThemedButton>
@@ -224,15 +248,21 @@
 
                         <div class="flex flex-wrap items-start gap-x-2 gap-y-2">
                           {#if step.credits > 0}
-                            <ItemTile
-                              tileKey="credits"
-                              imageUrl={CREDITS_ICON_URL}
-                              label={$tr("common.credits")}
-                              count={formatNumber(step.credits, $locale)}
-                              enough={totals.credits.owned >= step.credits}
-                            />
+                            {@const creditsMissing =
+                              filterMissingRequirements([
+                                { needed: step.credits, owned: totals.credits.owned },
+                              ]).length > 0}
+                            {#if !missingOnly || creditsMissing}
+                              <ItemTile
+                                tileKey="credits"
+                                imageUrl={CREDITS_ICON_URL}
+                                label={$tr("common.credits")}
+                                count={formatNumber(step.credits, $locale)}
+                                enough={totals.credits.owned >= step.credits}
+                              />
+                            {/if}
                           {/if}
-                          {#each step.items as item (item.itemType)}
+                          {#each missingOnly ? missingStepItems(step.items) : step.items as item (item.itemType)}
                             {@const have = owned.get(item.itemType) ?? 0}
                             {@const label = db[item.itemType]?.displayName ?? item.name}
                             <ItemTile
@@ -285,26 +315,29 @@
               </p>
             {/each}
 
-            <div class="flex items-center gap-2 text-xs">
-              <img
-                class="h-4 w-4 object-contain"
-                src={CREDITS_ICON_URL}
-                alt={$tr("common.credits")}
-              />
-              <span class="text-text-secondary">{formatNumber(totals.credits.needed, $locale)}</span
-              >
-              {#if totals.credits.missing > 0}
-                <span class="text-danger">
-                  {$tr("syndicates.missingAmount", {
-                    amount: formatNumber(totals.credits.missing, $locale),
-                  })}
-                </span>
-              {/if}
-            </div>
+            {#if !missingOnly || totals.credits.missing > 0}
+              <div class="flex items-center gap-2 text-xs">
+                <img
+                  class="h-4 w-4 object-contain"
+                  src={CREDITS_ICON_URL}
+                  alt={$tr("common.credits")}
+                />
+                <span class="text-text-secondary"
+                  >{formatNumber(totals.credits.needed, $locale)}</span
+                >
+                {#if totals.credits.missing > 0}
+                  <span class="text-danger">
+                    {$tr("syndicates.missingAmount", {
+                      amount: formatNumber(totals.credits.missing, $locale),
+                    })}
+                  </span>
+                {/if}
+              </div>
+            {/if}
 
-            {#if totals.items.length > 0}
+            {#if totalItems.length > 0}
               <ul class="m-0 flex list-none flex-col gap-1 p-0">
-                {#each totals.items as item (item.itemType)}
+                {#each totalItems as item (item.itemType)}
                   {@const label = db[item.itemType]?.displayName ?? item.name}
                   <li class="flex items-center gap-2 text-xs" data-syndicate-total-item>
                     <span class="h-4 w-4 shrink-0">

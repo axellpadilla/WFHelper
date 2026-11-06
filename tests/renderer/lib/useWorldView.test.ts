@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFissureRows, filterFissureRows } from "../../../src/lib/world/useWorldView.js";
+import {
+  buildFissureRows,
+  filterFissureRows,
+  formatWorldAge,
+} from "../../../src/lib/world/useWorldView.js";
 import type { Fissure } from "../../../src/types/world.js";
 
 const NOW = Date.parse("2026-08-28T12:00:00.000Z");
@@ -24,6 +28,20 @@ const FISSURES: Fissure[] = [
 ];
 
 const nodes = (rows: Array<{ node?: string }>) => rows.map((r) => r.node);
+
+const translate = (key: string, params?: Record<string, string | number>) =>
+  params ? `${key}:${Object.values(params).join(",")}` : key;
+
+describe("formatWorldAge", () => {
+  it("renders a localized relative age and leaves unknown timestamps blank", () => {
+    expect(formatWorldAge(0, NOW, translate)).toBeNull();
+    expect(formatWorldAge(NOW + 10_000, NOW, translate)).toBe("common.updatedJustNow");
+    expect(formatWorldAge(NOW - 42_000, NOW, translate)).toBe("common.updatedSAgo:42");
+    expect(formatWorldAge(NOW - 5 * 60_000, NOW, translate)).toBe("common.updatedMAgo:5");
+    expect(formatWorldAge(NOW - 3 * 3_600_000, NOW, translate)).toBe("common.updatedHAgo:3");
+    expect(formatWorldAge(NOW - 2 * 86_400_000, NOW, translate)).toBe("common.updatedDAgo:2");
+  });
+});
 
 describe("buildFissureRows in all mode", () => {
   it("merges normal and Steel Path rows and excludes Void Storms", () => {

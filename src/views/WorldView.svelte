@@ -98,7 +98,7 @@
   import EditLayoutBar from "../components/layout/EditLayoutBar.svelte";
   import LayoutGrid from "../components/layout/LayoutGrid.svelte";
   import OpenInWindowButton from "../components/layout/OpenInWindowButton.svelte";
-  import { worldData, worldLoading, worldFissureMode } from "../stores/world.js";
+  import { worldData, worldLastFetch, worldLoading, worldFissureMode } from "../stores/world.js";
   import { inventoryData, itemDb, componentOwnership, wfmItems } from "../stores/data.js";
   import {
     buildBountyGroups,
@@ -110,10 +110,12 @@
     COARSE_CLOCK_MS,
     FISSURE_MODE_OPTIONS,
     filterFissureRows,
+    formatWorldAge,
     fissureSearchQuery,
     fissureTierFilter,
     loadCollapsedSections,
     mountWorldView,
+    refreshWorldData,
     setCycleAlertMinutes,
     toggleCollapsedSection,
     toggleCycleAlert,
@@ -149,6 +151,7 @@
   import WorldWeekOverview from "../components/world/WorldWeekOverview.svelte";
   import NightwaveShop from "../components/world/NightwaveShop.svelte";
   import VendorRotations from "../components/world/VendorRotations.svelte";
+  import ThemedButton from "../components/ThemedButton.svelte";
   import { tr, type Translator } from "../lib/i18n.js";
   import InvasionItem from "../components/world/InvasionItem.svelte";
   import BaroInventoryCard from "../components/world/BaroInventoryCard.svelte";
@@ -198,6 +201,7 @@
   const coarseClock = clockStore(COARSE_CLOCK_MS);
   $: nowMs = $nowClock;
   $: nowCoarseMs = $coarseClock;
+  $: worldLastUpdated = formatWorldAge($worldLastFetch, nowCoarseMs, $tr);
 
   onMount(mountWorldView);
   onMount(() => {
@@ -407,6 +411,14 @@
         {$tr("common.world")}
       </h2>
       <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+        {#if worldLastUpdated}
+          <span class="whitespace-nowrap text-xs text-text-muted" data-world-last-updated>
+            {worldLastUpdated}
+          </span>
+        {/if}
+        <ThemedButton size="compact" disabled={$worldLoading} onClick={refreshWorldData}>
+          {$tr("common.refresh")}
+        </ThemedButton>
         {#if !isPopoutWindow}
           <OpenInWindowButton
             target="world"

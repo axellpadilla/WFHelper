@@ -82,6 +82,13 @@ interface AggregateNeeds {
   standing: StandingNeed[];
 }
 
+/** Keep only requirements whose owned count does not cover the required amount. */
+export function filterMissingRequirements<T extends { needed: number; owned: number }>(
+  requirements: readonly T[],
+): T[] {
+  return requirements.filter((requirement) => requirement.owned < requirement.needed);
+}
+
 interface AlignmentConflict {
   a: string;
   b: string;
