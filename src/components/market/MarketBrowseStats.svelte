@@ -5,7 +5,11 @@
   import { WFM_HEADERS } from "../../../config/shared/wfm.js";
   import { locale, tr, type LocaleCode } from "../../lib/i18n.js";
   import { invoke } from "../../lib/ipc.js";
-  import { fetchBackendPriceHistory } from "../../lib/wfm/priceHistory.js";
+  import {
+    buildArchivedStatsBuckets,
+    fetchBackendPriceHistory,
+    isMarketStatsCacheFresh,
+  } from "../../lib/wfm/priceHistory.js";
 
   export let slug: string | null = null;
 
@@ -15,6 +19,11 @@
   type Period = "48hours" | "90days" | "latest";
   type StatBuckets = Record<Period, StatEntry[]>;
   type LoadState = "idle" | "loading" | "ready" | "error";
+
+  interface CachedStats {
+    buckets: StatBuckets;
+    fetchedAt: number;
+  }
 
   interface Point {
     x: number;
@@ -86,9 +95,10 @@
   const FALLBACK_WIDTH = 900;
   const X_LABEL_SPACING = 150;
 
-  const cache = new SvelteMap<string, StatBuckets>();
+  const cache = new SvelteMap<string, CachedStats>();
 
   let buckets: StatBuckets | null = null;
+  let statsFetchedAt: number | null = null;
   let state: LoadState = "idle";
   let period: Period = "90days";
   let activeRank: number | null = null;
@@ -104,37 +114,62 @@
 
   $: void load(slug);
 
-  async function load(target: string | null): Promise<void> {
+  async function load(target: string | null, forceRefresh = false): Promise<void> {
     const token = ++requestToken;
     hoverIndex = null;
     if (!target) {
       buckets = null;
+      statsFetchedAt = null;
       state = "idle";
       return;
     }
 
     const cached = cache.get(target);
-    if (cached) {
-      apply(cached);
+    if (cached && !forceRefresh && isMarketStatsCacheFresh(cached.fetchedAt)) {
+      apply(cached.buckets);
+      statsFetchedAt = cached.fetchedAt;
       state = "ready";
-      void mergeLatest(target, cached["90days"], token);
+      void mergeLatest(target, cached.buckets["90days"], token);
       return;
     }
 
     buckets = null;
+    statsFetchedAt = null;
     state = "loading";
-    const fetched = await fetchStatistics(target);
+    let fetched = await fetchStatistics(target);
+    let usedArchive = false;
     if (token !== requestToken) return;
 
-    if (!fetched) {
-      state = "error";
-      return;
+    const hasLivePoints =
+      fetched != null && (fetched["48hours"].length > 0 || fetched["90days"].length > 0);
+    if (!hasLivePoints) {
+      const archived = await fetchArchivedStatistics(target);
+      if (token !== requestToken) return;
+      if (archived) {
+        fetched = {
+          "48hours": [],
+          "90days": archived.ninetyDays,
+          latest: archived.latest,
+        };
+        usedArchive = true;
+        if (fetched[period].length === 0) period = "latest";
+      } else if (!fetched) {
+        state = "error";
+        return;
+      }
     }
-    fetched.latest = fetched["90days"];
-    cache.set(target, fetched);
+    if (!usedArchive && fetched) {
+      fetched.latest = fetched["90days"];
+    }
+
+    if (!fetched) return;
+
+    const entry = { buckets: fetched, fetchedAt: Date.now() };
+    cache.set(target, entry);
+    statsFetchedAt = entry.fetchedAt;
     apply(fetched);
     state = "ready";
-    void mergeLatest(target, fetched["90days"], token);
+    if (!usedArchive) void mergeLatest(target, fetched["90days"], token);
   }
 
   function apply(next: StatBuckets): void {
@@ -146,7 +181,9 @@
   function publishLatest(target: string, latest: StatEntry[], token: number): void {
     if (token !== requestToken || !buckets) return;
     buckets = { ...buckets, latest };
-    cache.set(target, buckets);
+    const fetchedAt = cache.get(target)?.fetchedAt ?? statsFetchedAt ?? Date.now();
+    statsFetchedAt = fetchedAt;
+    cache.set(target, { buckets, fetchedAt });
     const available = collectRanks(buckets);
     if (activeRank == null || !available.includes(activeRank))
       activeRank = available.includes(0) ? 0 : (available[0] ?? null);
@@ -174,8 +211,26 @@
 
   function retry(): void {
     if (!slug) return;
-    cache.delete(slug);
-    void load(slug);
+    void load(slug, true);
+  }
+
+  async function fetchArchivedStatistics(target: string) {
+    const [history, stored] = await Promise.all([
+      fetchBackendPriceHistory(target),
+      invoke("marketStatsHistoryMerge", target, []).catch(() => null),
+    ]);
+    let points = stored ?? [];
+    if (history?.length) {
+      try {
+        points = (await invoke("marketStatsHistoryMerge", target, history, "fill")) ?? [
+          ...points,
+          ...history,
+        ];
+      } catch {
+        if (points.length === 0) points = history;
+      }
+    }
+    return buildArchivedStatsBuckets(points);
   }
 
   function setPeriod(next: Period): void {
@@ -532,10 +587,19 @@
     }
     return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`;
   }
+
+  function formatStatsAge(time: number | null, code: LocaleCode): string {
+    if (time == null) return "";
+    const age = Math.max(0, Date.now() - time);
+    const relative = new Intl.RelativeTimeFormat(code, { numeric: "auto", style: "short" });
+    if (age < 60_000) return relative.format(-Math.floor(age / 1_000), "second");
+    if (age < 3_600_000) return relative.format(-Math.floor(age / 60_000), "minute");
+    return relative.format(-Math.floor(age / 3_600_000), "hour");
+  }
 </script>
 
 <div class="grid gap-3">
-  <div class="flex flex-wrap items-end gap-x-4 gap-y-2">
+  <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
     <div class="grid gap-1">
       <span class="text-xs uppercase tracking-[0.05em] text-text-muted">{$tr("browse.period")}</span
       >
@@ -571,6 +635,17 @@
             >
           {/each}
         </div>
+      </div>
+    {/if}
+    {#if state === "ready"}
+      <div class="ml-auto flex items-center gap-2">
+        <span class="text-xs text-text-muted">{formatStatsAge(statsFetchedAt, $locale)}</span>
+        <button
+          class="btn-secondary btn-sm px-2 py-1 text-xs"
+          title={$tr("common.refresh")}
+          aria-label={$tr("common.refresh")}
+          on:click={retry}>{$tr("common.refresh")}</button
+        >
       </div>
     {/if}
   </div>
