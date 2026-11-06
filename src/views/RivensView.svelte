@@ -9,7 +9,15 @@
   } from "../lib/assetUrls.js";
   import { compareSharedFilterSort, matchesSharedFilters } from "../lib/filters.js";
   import { attrGradeColor, gradeColor } from "../lib/rivenGradeColors.js";
+  import { computeRivenEndo } from "../../config/shared/rivenEndo.js";
   import { rivenDissolveHint } from "../lib/rivens/dissolve.js";
+  import {
+    filterUnveiledRivens,
+    formatRivenListSummary,
+    type ListingStatusFilter,
+    type RollStatusFilter,
+    type RivenPolarityFilter,
+  } from "../lib/rivens/unveiledFilters.js";
   import { matchRivenListings, rivenNameSuffix } from "../lib/marketContract.js";
   import {
     ensureRivenContractsLoaded,
@@ -39,7 +47,7 @@
     RIVEN_TYPE_KEYS,
   } from "../lib/rivenLabels.js";
 
-  type RivenSortKey = "name" | "disposition" | "rerolls" | "grade" | "attr_grade";
+  type RivenSortKey = "name" | "disposition" | "endo" | "rerolls" | "grade" | "attr_grade";
   type RivenViewTab = "unveiled" | "veiled" | "finder";
 
   const VIEW_TAB_KEY = "wf_rivens_tab";
@@ -56,6 +64,9 @@
   let typeFilter = $state("all");
   let gradeFilter = $state("all");
   let attrGradeFilter = $state("all");
+  let listingFilter = $state<ListingStatusFilter>("all");
+  let rollFilter = $state<RollStatusFilter>("all");
+  let polarityFilter = $state<RivenPolarityFilter>("all");
   let selectedRiven = $state<DecodedRiven | null>(null);
   let viewTab = $state<RivenViewTab>(restoreViewTab());
   let listingsRefreshing = $state(false);
@@ -83,6 +94,22 @@
       label: value === "all" ? $tr("common.all") : $tr(RIVEN_ATTR_GRADE_KEYS[value]),
     })),
   );
+  const LISTING_OPTIONS = $derived([
+    { value: "all", label: $tr("common.all") },
+    { value: "listed", label: $tr("rivens.filter.listed") },
+    { value: "unlisted", label: $tr("rivens.filter.unlisted") },
+  ]);
+  const ROLL_OPTIONS = $derived([
+    { value: "all", label: $tr("common.all") },
+    { value: "unrolled", label: $tr("rivens.filter.unrolled") },
+    { value: "rolled", label: $tr("rivens.filter.rolled") },
+  ]);
+  const POLARITY_OPTIONS = $derived([
+    { value: "all", label: $tr("common.all") },
+    { value: "madurai", label: "Madurai" },
+    { value: "vazarin", label: "Vazarin" },
+    { value: "naramon", label: "Naramon" },
+  ]);
   const VIEW_TABS = $derived([
     { key: "unveiled", label: $tr("rivens.tab.unveiled") },
     { key: "veiled", label: $tr("rivens.tab.veiled") },
@@ -91,6 +118,7 @@
   const SORT_OPTIONS: Array<[RivenSortKey, string]> = $derived([
     ["name", $tr("common.name")],
     ["disposition", $tr("rivens.sort.disposition")],
+    ["endo", $tr("rivens.sort.endo")],
     ["rerolls", $tr("common.rerolls")],
     ["grade", $tr("rivens.sort.grade")],
     ["attr_grade", $tr("rivens.sort.attributeGrade")],
@@ -100,6 +128,7 @@
     name: string;
     keywords: string[];
     disposition: number;
+    endo: number;
     rerolls: number;
     grade: string;
     attrGradeRank: number | null;
@@ -109,10 +138,21 @@
       // rivenName makes the generated suffix searchable ("satidra", "croni").
       keywords: [riven.rivenName, ...riven.stats.map((stat) => stat.name)],
       disposition: riven.disposition,
+      endo: computeRivenEndo({
+        masteryRank: riven.masteryReq,
+        modRank: riven.currentRank,
+        rerolls: riven.rerolls,
+      }),
       rerolls: riven.rerolls,
       grade: riven.overallGrade,
       attrGradeRank: RIVEN_ATTR_GRADE_ORDER[riven.attributeGrade] ?? null,
     };
+  }
+
+  const listingByRiven = $derived(matchRivenListings(rivens, $marketContracts.contracts));
+
+  function findContractForRiven(riven: DecodedRiven): WfmContract | null {
+    return listingByRiven.get(riven.itemId) ?? null;
   }
 
   const filteredRivens = $derived.by(() => {
@@ -127,6 +167,11 @@
     if (attrGradeFilter !== "all") {
       list = list.filter((r) => r.attributeGrade === attrGradeFilter);
     }
+    list = filterUnveiledRivens(
+      list,
+      { listing: listingFilter, rolls: rollFilter, polarity: polarityFilter },
+      (riven) => findContractForRiven(riven) !== null,
+    );
     list = [...list].sort((a, b) =>
       compareSharedFilterSort(filterableRiven(a), filterableRiven(b), $rivenFilters),
     );
@@ -139,8 +184,6 @@
   const totalVeiled = $derived(
     veiledRivens.length + veiledUnseen.reduce((sum, g) => sum + g.count, 0),
   );
-
-  const listingByRiven = $derived(matchRivenListings(rivens, $marketContracts.contracts));
 
   // The buyout is what a buyer can take.
   function listingPlatinum(contract: WfmContract): number {
@@ -171,6 +214,14 @@
     } catch {
       addToast({ level: "error", message: $tr("common.copyFailed") });
     }
+  }
+
+  function copyFilteredRivenList(): void {
+    void copyToClipboard(
+      formatRivenListSummary(
+        filteredRivens.map((riven) => ({ riven, contract: findContractForRiven(riven) })),
+      ),
+    );
   }
 
   function reloadListings(): void {
@@ -437,6 +488,58 @@
           {/each}
         </select>
       </label>
+
+      <label class="flex shrink-0 items-center gap-1.5">
+        <span class="text-xs text-text-muted">{$tr("rivens.filter.listing")}</span>
+        <select
+          class="shared-filter-select min-w-24"
+          title={$tr("rivens.filter.listing")}
+          bind:value={listingFilter}
+          data-riven-listing-filter
+        >
+          {#each LISTING_OPTIONS as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      </label>
+
+      <label class="flex shrink-0 items-center gap-1.5">
+        <span class="text-xs text-text-muted">{$tr("rivens.filter.rolls")}</span>
+        <select
+          class="shared-filter-select min-w-24"
+          title={$tr("rivens.filter.rolls")}
+          bind:value={rollFilter}
+          data-riven-roll-filter
+        >
+          {#each ROLL_OPTIONS as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      </label>
+
+      <label class="flex shrink-0 items-center gap-1.5">
+        <span class="text-xs text-text-muted">{$tr("rivens.filter.polarity")}</span>
+        <select
+          class="shared-filter-select min-w-24"
+          title={$tr("rivens.filter.polarity")}
+          bind:value={polarityFilter}
+          data-riven-polarity-filter
+        >
+          {#each POLARITY_OPTIONS as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      </label>
+
+      <button
+        class="btn-secondary btn-sm inline-flex items-center gap-1.5"
+        onclick={copyFilteredRivenList}
+        disabled={filteredRivens.length === 0}
+        data-riven-copy-list
+      >
+        {@render copyGlyph("h-3 w-3")}
+        {$tr("rivens.copyList")}
+      </button>
 
       <button
         class="btn-secondary btn-sm inline-flex items-center gap-1.5"

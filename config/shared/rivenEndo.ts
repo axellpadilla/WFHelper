@@ -28,6 +28,15 @@ export function rivenDissolveEndo(masteryRank: number, modRank: number, rerolls:
   return Math.max(0, total);
 }
 
+/** Endo value using the named fields shared by decoded Riven data. */
+export function computeRivenEndo(input: {
+  masteryRank: number;
+  modRank: number;
+  rerolls: number;
+}): number {
+  return rivenDissolveEndo(input.masteryRank, input.modRank, input.rerolls);
+}
+
 /** Endo per platinum asked. Zero-or-less prices have no ratio rather than an
  *  infinite one, so a free listing can never satisfy a minimum. */
 export function rivenEndoPerPlat(

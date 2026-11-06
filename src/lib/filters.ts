@@ -18,6 +18,7 @@ const DESCENDING_DEFAULT_SORT_KEYS = new Set<string>([
   "count",
   "owned",
   "disposition",
+  "endo",
   "rerolls",
   "grade",
   "attr_grade",
@@ -83,6 +84,7 @@ interface FilterableItem {
   count?: number | null;
   time?: number | null;
   disposition?: number | null;
+  endo?: number | null;
   rerolls?: number | null;
   grade?: string | number | null;
   gradeRank?: number | null;
@@ -155,6 +157,7 @@ const DIRECT_METRIC_FIELDS = [
   "count",
   "time",
   "disposition",
+  "endo",
   "rerolls",
 ] as const;
 
