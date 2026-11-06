@@ -2706,6 +2706,7 @@
   "settings.overlayDesc": "When overlays open and how they read the game.",
   "settings.hotkeysTitle": "Hotkeys",
   "settings.hotkeysDesc": "Click a field, then press the keys.",
+  "settings.waylandShortcutHint": "Wayland shortcuts register automatically through the XDG GlobalShortcuts portal or Hyprland IPC. If unavailable, bind --trigger-reward-scan, --toggle-overlay-interaction, or --trigger-riven-scan in your compositor as a fallback.",
   "settings.linuxOverlaysInteractive": "Switch to interactive overlays",
   "settings.linuxOverlaysClickThrough": "Switch to click-through overlays",
   "settings.linuxCaptureSetup": "Set up screen capture",

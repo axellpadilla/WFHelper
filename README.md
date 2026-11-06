@@ -77,10 +77,17 @@ Good to know:
   no window at all, so WFHelper notices, restarts on native Wayland and
   remembers it. Settings lets you pick the backend by hand. Wayland gives no
   app a way to force itself above another, so overlays are best-effort there.
-- **Native Wayland has no global hotkeys.** The overlay unlock key never fires
-  there, so use "Switch to interactive overlays" in Settings > Overlays, or bind
-  `--toggle-overlay-interaction` to a key in your compositor. In niri:
+- **Wayland shortcuts are registered automatically** through the XDG
+  GlobalShortcuts portal on GNOME/KDE, or Hyprland IPC on Hyprland. If a
+  compositor does not provide either backend, while Warframe is running bind
+  `--trigger-reward-scan`, `--toggle-overlay-interaction` and
+  `--trigger-riven-scan` to compositor or desktop shortcuts for reward scans,
+  overlay interaction, and riven rescans. For example, in niri:
   `Mod+I { spawn "/path/to/WFHelper.AppImage" "--toggle-overlay-interaction"; }`
+  Each flag hands the action to the running WFHelper instance. On Ubuntu 26,
+  native Wayland in Proton can be enabled with `PROTON_ENABLE_WAYLAND=1 %command%`
+  in Warframe's Steam launch options; use these compositor bindings when the
+  game is running that way.
 - **SteamOS is untested.** Desktop mode may work like any other distro. Game
   mode is not supported: gamescope only displays the game it launched, so
   forcing the app into it can freeze the session.

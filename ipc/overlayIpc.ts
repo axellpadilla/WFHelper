@@ -280,6 +280,10 @@ function onRelicRewardTrigger(source = "manual", stalenessMs = 0): void {
   );
 }
 
+export function onRivenRescanTrigger(source = "manual"): void {
+  rivenOverlayIpc.onRivenManualRescan(source);
+}
+
 const OVERLAY_SETTINGS_FILE = userDataPath(OVERLAY_SETTINGS_FILE_NAME);
 
 const settingsController = createOverlaySettingsController({

@@ -2687,6 +2687,7 @@
   "settings.overlayDesc": "悬浮窗何时打开以及如何读取游戏画面。",
   "settings.hotkeysTitle": "热键",
   "settings.hotkeysDesc": "点击输入框，然后按下按键。",
+  "settings.waylandShortcutHint": "Wayland 快捷键会自动通过 XDG GlobalShortcuts 门户或 Hyprland IPC 注册。若不可用，可将 --trigger-reward-scan、--toggle-overlay-interaction 或 --trigger-riven-scan（裂罅重扫）绑定到合成器作为备用方案。",
   "settings.linuxOverlaysInteractive": "切换为可交互悬浮窗",
   "settings.linuxOverlaysClickThrough": "切换为点击穿透悬浮窗",
   "settings.linuxCaptureSetup": "设置屏幕捕获",
