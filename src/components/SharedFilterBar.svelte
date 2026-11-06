@@ -201,6 +201,15 @@
       : 0;
     updateSharedFilters(scope, { minimumPlatinum });
   }
+
+  function setMinimumDucats(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    const value = input.valueAsNumber;
+    const minimumDucats = Number.isFinite(value)
+      ? Math.max(0, Math.min(1_000_000, Math.floor(value)))
+      : 0;
+    updateSharedFilters(scope, { minimumDucats });
+  }
 </script>
 
 <div class="shared-filter-bar" class:shared-filter-bar-inline={singleLine} data-tour="filter-bar">
@@ -390,6 +399,25 @@
                 on:input={setMinimumPlatinum}
               />
               <span>p</span>
+            </label>
+          </div>
+        </div>
+      {:else if id === "minDucats"}
+        <div class="shared-chip-group" title={$tr("filters.minDucatsTitle")}>
+          <span class="shared-chip-label">{$tr("filters.minDucatsTitle")}</span>
+          <div class="filter-tabs">
+            <label class="shared-number-filter">
+              <input
+                type="number"
+                min="0"
+                max="1000000"
+                step="1"
+                value={state.minimumDucats || ""}
+                placeholder={$tr("filters.any")}
+                aria-label={$tr("filters.customMinDucats")}
+                on:input={setMinimumDucats}
+              />
+              <span>d</span>
             </label>
           </div>
         </div>

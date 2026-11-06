@@ -50,6 +50,7 @@ export type FilterControlId =
   | "partType"
   | "favorite"
   | "minPlatinum"
+  | "minDucats"
   | "minAmount"
   | "equipped"
   | "leveledUp";
@@ -73,6 +74,7 @@ export interface SharedFiltersState {
   partType: PartTypeFilterMode;
   favorite: YesNoFilterMode;
   minimumPlatinum: number;
+  minimumDucats: number;
   /** 0 = any, 2 = only items owned more than once (">1"). */
   minimumAmount: 0 | 2;
   equipped: YesNoFilterMode;

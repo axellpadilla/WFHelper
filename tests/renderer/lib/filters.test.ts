@@ -28,6 +28,7 @@ function defaultFilters(): SharedFiltersState {
     partType: "all",
     favorite: "all",
     minimumPlatinum: 0,
+    minimumDucats: 0,
     minimumAmount: 0,
     equipped: "all",
     leveledUp: "all",
@@ -186,6 +187,20 @@ describe("shared filters", () => {
     ];
 
     expect(applySharedFiltersAndSort(items, filters).map((item) => item.name)).toEqual(["Seven"]);
+  });
+
+  it("filters items by a custom minimum ducat value", () => {
+    const filters: SharedFiltersState = { ...defaultFilters(), minimumDucats: 45 };
+    const items = [
+      { name: "Bronze", ducats: 15 },
+      { name: "Threshold", ducats: 45 },
+      { name: "No ducat value", ducats: null },
+    ];
+
+    expect(applySharedFiltersAndSort(items, filters).map((item) => item.name)).toEqual([
+      "Threshold",
+    ]);
+    expect(matchesSharedFilters({ name: "No metric" }, filters)).toBe(false);
   });
 
   it("derives ducatonator from ducats/platinum", () => {
@@ -383,6 +398,7 @@ describe("filter control registry", () => {
         expect(FILTER_CONTROL_LABEL_KEYS[id]).toBeTruthy();
       }
     }
+    expect(FILTER_CONTROL_SUPPORT.inventory).toContain("minDucats");
   });
 });
 
@@ -392,7 +408,16 @@ describe("defaultSortDirection", () => {
     expect(defaultSortDirection("tier")).toBe("asc");
     expect(defaultSortDirection("time")).toBe("asc");
     expect(defaultSortDirection("missing_parts")).toBe("asc");
-    for (const key of ["platinum", "ducats", "amount", "count", "mastery_xp", "ev", "ducat"]) {
+    for (const key of [
+      "platinum",
+      "ducats",
+      "amount",
+      "count",
+      "mastery_xp",
+      "ev",
+      "ducat",
+      "ducatonator",
+    ]) {
       expect(defaultSortDirection(key)).toBe("desc");
     }
   });

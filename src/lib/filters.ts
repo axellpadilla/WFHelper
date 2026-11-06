@@ -260,6 +260,12 @@ export function matchesSharedFilters(item: FilterableItem, filters: SharedFilter
   ) {
     return false;
   }
+  if (
+    filters.minimumDucats > 0 &&
+    (typeof item.ducats !== "number" || item.ducats < filters.minimumDucats)
+  ) {
+    return false;
+  }
 
   const filterAmount = typeof item.combinedAmount === "number" ? item.combinedAmount : item.amount;
   if (
@@ -324,6 +330,7 @@ export const FILTER_CONTROL_IDS: readonly FilterControlId[] = [
   "partType",
   "favorite",
   "minPlatinum",
+  "minDucats",
   "minAmount",
   "equipped",
   "leveledUp",
@@ -363,6 +370,7 @@ export const FILTER_CONTROL_FIELDS: Record<FilterControlId, readonly (keyof Shar
     partType: ["partType"],
     favorite: ["favorite"],
     minPlatinum: ["minimumPlatinum"],
+    minDucats: ["minimumDucats"],
     minAmount: ["minimumAmount"],
     equipped: ["equipped"],
     leveledUp: ["leveledUp"],
@@ -383,6 +391,7 @@ export const FILTER_CONTROL_LABEL_KEYS: Record<FilterControlId, MessageKey> = {
   partType: "filters.partTypeTitle",
   favorite: "filters.favoriteTitle",
   minPlatinum: "filters.minPlatinumTitle",
+  minDucats: "filters.minDucatsTitle",
   minAmount: "filters.amount",
   equipped: "common.equippedModsOnly",
   leveledUp: "filters.leveledUpLabel",
@@ -402,6 +411,7 @@ export const FILTER_CONTROL_SUPPORT: Record<FilterScope, readonly FilterControlI
     "partType",
     "favorite",
     "minPlatinum",
+    "minDucats",
     "minAmount",
     "equipped",
     "leveledUp",

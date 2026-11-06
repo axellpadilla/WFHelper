@@ -20,8 +20,14 @@ export const INVENTORY_LIST_COLUMNS = [
   { key: "mastery", labelKey: "common.mastery", sortKey: null, numeric: false },
   { key: "platinum", labelKey: "common.platinum", sortKey: "platinum", numeric: true },
   { key: "ducats", labelKey: "common.ducats", sortKey: "ducats", numeric: true },
+  { key: "ducatonator", labelKey: "filters.ducatonator", sortKey: "ducatonator", numeric: true },
   { key: "order", labelKey: "filters.orderPlaced", sortKey: null, numeric: false },
 ] as const satisfies readonly InventoryListColumn[];
+
+export function formatDucatonator(value: number | null, locale: string): string {
+  if (value == null || value === 0) return "—";
+  return value.toLocaleString(locale, { maximumFractionDigits: 1 });
+}
 
 /**
  * The Owned cell shows a parts fraction for incomplete sets, so "amount" fits only
