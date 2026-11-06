@@ -22,6 +22,48 @@ export function setRootOf(internalName: string): string {
     : internalName;
 }
 
+/** Lists missing set parts without repeating the parent set name. */
+export function formatMissingSetParts(
+  item: Pick<ParsedItem, "name" | "displayName" | "components">,
+): string {
+  const parentNames = [item.displayName, item.name]
+    .filter((name): name is string => typeof name === "string" && name.trim().length > 0)
+    .map((name) => name.trim().replace(/\s+Set$/i, ""));
+
+  return item.components
+    .filter((component) => {
+      const required =
+        Number.isFinite(component.itemCount) && (component.itemCount ?? 0) > 0
+          ? component.itemCount!
+          : 1;
+      const owned = Number.isFinite(component.ownedCount) ? (component.ownedCount ?? 0) : 0;
+      return owned < required;
+    })
+    .map((component) => {
+      const required =
+        Number.isFinite(component.itemCount) && (component.itemCount ?? 0) > 0
+          ? component.itemCount!
+          : 1;
+      const owned = Number.isFinite(component.ownedCount) ? (component.ownedCount ?? 0) : 0;
+      let name = (component.displayName || component.name).trim();
+
+      for (const parentName of parentNames) {
+        if (name.toLowerCase().startsWith(`${parentName.toLowerCase()} `)) {
+          name = name.slice(parentName.length).trim();
+          break;
+        }
+      }
+
+      if (name && name.toLowerCase() !== "blueprint") {
+        name = name.replace(/\s+Blueprint$/i, "").trim();
+      }
+      if (required > 1) name = `${name} (${owned}/${required})`;
+      return name;
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
 function isGenericSetComponent(
   component: ComponentInfo,
   itemDb: Record<string, ItemDbEntry>,

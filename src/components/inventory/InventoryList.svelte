@@ -31,6 +31,7 @@
   import type { InventoryMarketItem } from "../../lib/inventoryMarket.js";
   import type { SharedSortKey, SortDirection } from "../../types/filters.js";
   import { isRankedGroup } from "../../../config/shared/numeric.js";
+  import { formatMissingSetParts } from "../../lib/inventory/fullSets.js";
 
   interface Props {
     items: InventoryMarketItem[];
@@ -264,6 +265,10 @@
                 ...reserved.reservations.map((entry) => $t(entry.reasonKey, entry.params)),
               ].join("\n")
             : ""}
+          {@const missingSetParts =
+            item.inventoryGroup === "incomplete_sets" && (item.missingParts ?? 0) > 0
+              ? formatMissingSetParts(item)
+              : ""}
           <tr
             class="cursor-pointer transition-colors duration-100 hover:bg-bg-raised {selected
               ? 'bg-accent/15'
@@ -317,6 +322,15 @@
               </button>
               <span class="flex flex-wrap items-center gap-1.5 text-[11px] text-text-muted">
                 <span>{item.categoryLabel}</span>
+                {#if missingSetParts}
+                  <span
+                    class="inline-flex max-w-64 truncate rounded border border-info/30 bg-info/10 px-1.5 py-0.5 text-info"
+                    data-missing-set-parts
+                    title={missingSetParts}
+                  >
+                    {missingSetParts}
+                  </span>
+                {/if}
                 {#if $showVaultedBadges && item.vaulted}<span
                     class="vault-badge vault-badge--inline"
                     title={$t("common.vaulted")}>V</span
