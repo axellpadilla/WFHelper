@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFullSetItems } from "../../../../src/lib/inventory/fullSets.js";
+import {
+  buildFullSetItems,
+  formatMissingSetParts,
+} from "../../../../src/lib/inventory/fullSets.js";
 import type { ItemDbEntry } from "../../../../src/types/inventory.js";
 
 const ROOT = "/Lotus/Weapons/Tenno/Pistol/AkfooPrime";
@@ -57,5 +60,43 @@ describe("buildFullSetItems", () => {
     const set = rows.find((row) => row.internalName.startsWith(ROOT));
     expect(set?.category).toBe("full_sets");
     expect(set?.amount).toBe(1);
+  });
+});
+
+describe("formatMissingSetParts", () => {
+  it("strips the repeated set name and shows partial quantities", () => {
+    expect(
+      formatMissingSetParts({
+        name: "Ash Prime Set",
+        components: [
+          {
+            name: "Ash Prime Systems Blueprint",
+            itemCount: 1,
+            ownedCount: 0,
+          },
+          { name: "Ash Prime Blade", itemCount: 2, ownedCount: 1 },
+          { name: "Ash Prime Handle", itemCount: 1, ownedCount: 1 },
+        ],
+      }),
+    ).toBe("Systems, Blade (1/2)");
+  });
+
+  it("uses a localized parent name when it matches the component", () => {
+    expect(
+      formatMissingSetParts({
+        name: "Ash Prime Set",
+        displayName: "Localized Ash Prime Set",
+        components: [{ name: "Ash Prime Chassis Blueprint", itemCount: 1, ownedCount: 0 }],
+      }),
+    ).toBe("Chassis");
+  });
+
+  it("returns an empty string when no component is missing", () => {
+    expect(
+      formatMissingSetParts({
+        name: "Ash Prime Set",
+        components: [{ name: "Ash Prime Systems Blueprint", itemCount: 1, ownedCount: 1 }],
+      }),
+    ).toBe("");
   });
 });

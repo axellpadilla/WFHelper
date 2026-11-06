@@ -5,6 +5,7 @@ import {
   INVENTORY_LIST_COLUMNS,
   ownedSortKeyFor,
 } from "../../../src/components/inventory/inventoryListColumns.js";
+import { formatMissingSetParts } from "../../../src/lib/inventory/fullSets.js";
 import {
   applySharedFiltersAndSort,
   defaultSortDirection,
@@ -202,6 +203,21 @@ describe("owned header over a paged list", () => {
   it("still reads the page when the caller passes no full list", () => {
     expect(headerSortKey(visible, null)).toBeNull();
     expect(headerSortKey(visible.slice(3), null)).toBe("missing_parts");
+  });
+});
+
+describe("incomplete set list labels", () => {
+  it("provides concise missing-part text with a full title value", () => {
+    const incomplete = row("Ash Prime Set", {
+      inventoryGroup: "incomplete_sets",
+      missingParts: 2,
+      components: [
+        { name: "Ash Prime Systems Blueprint", itemCount: 1, ownedCount: 0 },
+        { name: "Ash Prime Blade", itemCount: 2, ownedCount: 1 },
+      ],
+    });
+
+    expect(formatMissingSetParts(incomplete)).toBe("Systems, Blade (1/2)");
   });
 });
 

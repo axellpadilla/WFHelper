@@ -49,7 +49,7 @@
     relicGroupMatchesSearch,
   } from "../lib/relic.js";
   import { invoke, send } from "../lib/ipc.js";
-  import { tr, type MessageKey } from "../lib/i18n.js";
+  import { locale, tr, type MessageKey } from "../lib/i18n.js";
   import HeaderTabs from "../components/HeaderTabs.svelte";
   import EditLayoutBar from "../components/layout/EditLayoutBar.svelte";
   import LayoutGrid from "../components/layout/LayoutGrid.svelte";
@@ -72,6 +72,10 @@
     type RelicPlannerFilters,
   } from "../../config/shared/relicPlannerView.js";
   import { sortRelicRewards } from "../../config/shared/relicRewardOrder.js";
+  import {
+    ownedVoidTraceCount,
+    summarizeRelicPlannerInventory,
+  } from "../lib/relic/relicInventory.js";
   import type { ParsedItem } from "../types/inventory.js";
   import type { RelicGroup, RelicQuality, RelicReward } from "../types/relics.js";
   import type {
@@ -488,6 +492,11 @@
     needContext,
     QUALITY_LABELS,
   );
+  $: plannerInventorySummary = summarizeRelicPlannerInventory(
+    groups,
+    $relicOwnedCounts,
+    ownedVoidTraceCount($inventoryData, $parsedItems),
+  );
 
   $: warmupController.updateContext({
     db: $relicDb,
@@ -730,6 +739,18 @@
       {$tr("relics.title", { count: groups.length })}
     </h2>
     <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+      <span
+        class="inline-flex items-center rounded border border-border-subtle bg-bg-raised px-2 py-1 text-xs text-text-secondary tabular-nums"
+        data-relic-inventory-summary
+      >
+        {$tr("relics.quality.intact")}: {plannerInventorySummary.intact.toLocaleString($locale)} ·
+        {$tr("relics.quality.radiant")}: {plannerInventorySummary.radiant.toLocaleString($locale)}
+        {#if plannerInventorySummary.voidTraces !== null}
+          · {$tr("stats.resource.voidTraces")}: {plannerInventorySummary.voidTraces.toLocaleString(
+            $locale,
+          )} ({plannerInventorySummary.affordableRadiantRefinements} rads)
+        {/if}
+      </span>
       <button
         type="button"
         class="btn-secondary btn-sm"

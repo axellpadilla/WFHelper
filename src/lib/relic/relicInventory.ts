@@ -1,6 +1,6 @@
 import { collectRelicInventoryCounts } from "../../../config/shared/relicCounts.js";
 import { RELIC_QUALITY_MODES as QUALITY_MODES } from "../../../config/shared/relicPlannerView.js";
-import type { RawInventoryData } from "../../types/inventory.js";
+import type { ParsedItem, RawInventoryData } from "../../types/inventory.js";
 import type { OwnedCounts, RelicDatabase, RelicGroup, RelicQuality } from "../../types/relics.js";
 
 /** The refinements of one relic the player holds, in the game's tier order,
@@ -88,4 +88,60 @@ export function parseOwnedRelics(
   }
 
   return owned;
+}
+
+const VOID_TRACES_UNIQUE_NAME = "/Lotus/Types/Items/MiscItems/VoidTearDrop";
+
+/** Reads the raw resource stack first, then falls back to parsed inventory rows. */
+export function ownedVoidTraceCount(
+  inventoryData: RawInventoryData | null,
+  parsedItems: readonly ParsedItem[] = [],
+): number | null {
+  if (Array.isArray(inventoryData?.MiscItems)) {
+    const row = inventoryData.MiscItems.find((item) => item?.ItemType === VOID_TRACES_UNIQUE_NAME);
+    if (!row) return 0;
+    if (typeof row.ItemCount === "number" && Number.isFinite(row.ItemCount)) {
+      return Math.max(0, row.ItemCount);
+    }
+  }
+
+  const parsed = parsedItems.find(
+    (item) =>
+      item.uniqueName === VOID_TRACES_UNIQUE_NAME ||
+      item.internalName === VOID_TRACES_UNIQUE_NAME ||
+      item.name.trim().toLowerCase() === "void traces",
+  );
+  return typeof parsed?.amount === "number" && Number.isFinite(parsed.amount)
+    ? Math.max(0, parsed.amount)
+    : null;
+}
+
+interface RelicPlannerInventorySummary {
+  intact: number;
+  radiant: number;
+  voidTraces: number | null;
+  affordableRadiantRefinements: number | null;
+}
+
+/** Summarizes owned Intact/Radiant relics for the visible planner groups. */
+export function summarizeRelicPlannerInventory(
+  groups: readonly RelicGroup[],
+  ownedCounts: OwnedCounts,
+  voidTraces: number | null,
+): RelicPlannerInventorySummary {
+  const summary = groups.reduce(
+    (counts, group) => {
+      counts.intact += ownedCounts[group.key]?.intact ?? 0;
+      counts.radiant += ownedCounts[group.key]?.radiant ?? 0;
+      return counts;
+    },
+    { intact: 0, radiant: 0 },
+  );
+
+  return {
+    ...summary,
+    voidTraces,
+    affordableRadiantRefinements:
+      voidTraces === null ? null : Math.floor(Math.max(0, voidTraces) / 100),
+  };
 }

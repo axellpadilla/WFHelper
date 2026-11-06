@@ -22,6 +22,7 @@
   import { tr } from "../../lib/i18n.js";
   import type { InventoryMarketItem } from "../../lib/inventoryMarket.js";
   import { isRankedGroup } from "../../../config/shared/numeric.js";
+  import { formatMissingSetParts } from "../../lib/inventory/fullSets.js";
 
   export let item: InventoryMarketItem;
   export let showDucats = true;
@@ -52,6 +53,10 @@
     : "";
 
   $: marks = itemMarksFor(item);
+  $: missingSetParts =
+    item.inventoryGroup === "incomplete_sets" && (item.missingParts ?? 0) > 0
+      ? formatMissingSetParts(item)
+      : "";
 
   $: mastered = item.rank >= item.maxRank && item.maxRank > 1;
   $: canShowRank = item.maxRank > 1 && isRankedGroup(item.inventoryGroup);
@@ -233,6 +238,15 @@
             })}
       {/if}
     </span>
+    {#if missingSetParts}
+      <span
+        class="mt-1 inline-flex w-fit max-w-full rounded border border-info/30 bg-info/10 px-1.5 py-0.5 text-[0.65rem] text-info"
+        data-missing-set-parts
+        title={missingSetParts}
+      >
+        {missingSetParts}
+      </span>
+    {/if}
 
     <MarketMetricStrip
       platinum={item.platinum}
