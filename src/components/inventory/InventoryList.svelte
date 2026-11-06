@@ -16,7 +16,11 @@
   import { locale, tr as t } from "../../lib/i18n.js";
   import { nextColumnSort } from "../../lib/filters.js";
   import { itemLabel } from "../../lib/itemLabel.js";
-  import { INVENTORY_LIST_COLUMNS, ownedSortKeyFor } from "./inventoryListColumns.js";
+  import {
+    formatDucatonator,
+    INVENTORY_LIST_COLUMNS,
+    ownedSortKeyFor,
+  } from "./inventoryListColumns.js";
   import { itemMarksFor } from "../../lib/parentMastery.js";
   import { wfmItems } from "../../stores/data.js";
   import {
@@ -69,7 +73,9 @@
   }: Props = $props();
 
   const columns = $derived(
-    INVENTORY_LIST_COLUMNS.filter((column) => showDucats || column.key !== "ducats"),
+    INVENTORY_LIST_COLUMNS.filter(
+      (column) => showDucats || (column.key !== "ducats" && column.key !== "ducatonator"),
+    ),
   );
 
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -214,6 +220,20 @@
             >
               {#if column.labelKey === null}
                 <span class="sr-only">{$t("common.item")}</span>
+              {:else if column.key === "ducatonator"}
+                {#if sortKey === null}
+                  <span title={$t("filters.ducatonator")}>D/P</span>
+                {:else}
+                  <SortHeaderButton
+                    label="D/P"
+                    aria-label={$t("filters.ducatonator")}
+                    {active}
+                    direction={sortDirection}
+                    alignEnd={column.numeric}
+                    data-list-sort={sortKey}
+                    onclick={() => sortByColumn(sortKey)}
+                  />
+                {/if}
               {:else if sortKey === null}
                 {$t(column.labelKey)}
               {:else}
@@ -365,6 +385,15 @@
                   : 'text-accent'}"
               >
                 {numberLabel(item.ducats, $locale)}
+              </td>
+              <td
+                class="border-b border-border/50 px-2 py-1 text-right tabular-nums {item.ducatonator ==
+                  null || item.ducatonator === 0
+                  ? 'text-text-muted'
+                  : 'text-accent'}"
+                data-inventory-ducatonator
+              >
+                {formatDucatonator(item.ducatonator, $locale)}
               </td>
             {/if}
             <td class="border-b border-border/50 px-2 py-1">

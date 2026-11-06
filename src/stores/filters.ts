@@ -15,6 +15,7 @@ function createDefaultSharedFiltersState(): SharedFiltersState {
     partType: "all",
     favorite: "all",
     minimumPlatinum: 0,
+    minimumDucats: 0,
     minimumAmount: 0,
     equipped: "all",
     leveledUp: "all",

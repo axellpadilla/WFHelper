@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatDucatonator,
   INVENTORY_LIST_COLUMNS,
   ownedSortKeyFor,
 } from "../../../src/components/inventory/inventoryListColumns.js";
@@ -26,6 +27,7 @@ function defaultFilters(): SharedFiltersState {
     partType: "all",
     favorite: "all",
     minimumPlatinum: 0,
+    minimumDucats: 0,
     minimumAmount: 0,
     equipped: "all",
     leveledUp: "all",
@@ -86,13 +88,14 @@ describe("INVENTORY_LIST_COLUMNS", () => {
       "mastery",
       "platinum",
       "ducats",
+      "ducatonator",
       "order",
     ]);
   });
 
   it("marks the counted columns numeric so they render tabular", () => {
     const numeric = INVENTORY_LIST_COLUMNS.filter((column) => column.numeric).map((c) => c.key);
-    expect(numeric).toEqual(["owned", "platinum", "ducats"]);
+    expect(numeric).toEqual(["owned", "platinum", "ducats", "ducatonator"]);
   });
 
   it("sorts only through keys the shared sort store already understands", () => {
@@ -104,6 +107,7 @@ describe("INVENTORY_LIST_COLUMNS", () => {
       ["owned", "amount"],
       ["platinum", "platinum"],
       ["ducats", "ducats"],
+      ["ducatonator", "ducatonator"],
     ]);
   });
 
@@ -111,6 +115,14 @@ describe("INVENTORY_LIST_COLUMNS", () => {
     const icon = INVENTORY_LIST_COLUMNS[0];
     expect(icon.labelKey).toBeNull();
     expect(icon.sortKey).toBeNull();
+  });
+});
+
+describe("formatDucatonator", () => {
+  it("formats a D/P ratio and uses an em dash for missing or zero values", () => {
+    expect(formatDucatonator(12.5, "en")).toBe("12.5");
+    expect(formatDucatonator(null, "en")).toBe("—");
+    expect(formatDucatonator(0, "en")).toBe("—");
   });
 });
 
@@ -212,6 +224,25 @@ describe("nextColumnSort", () => {
       sortBy: "ducats",
       sortDirection: "desc",
     });
+  });
+
+  it("sorts the D/P column by ducats per platinum", () => {
+    const items = [
+      row("Low ratio", { ducatonator: 3 }),
+      row("High ratio", { ducatonator: 12.5 }),
+      row("No ratio", { ducatonator: null }),
+    ];
+    const filters = {
+      ...defaultFilters(),
+      ...nextColumnSort({ sortBy: "name" as const, sortDirection: "asc" as const }, "ducatonator"),
+    };
+
+    expect(filters).toMatchObject({ sortBy: "ducatonator", sortDirection: "desc" });
+    expect(applySharedFiltersAndSort(items, filters).map((item) => item.name)).toEqual([
+      "High ratio",
+      "Low ratio",
+      "No ratio",
+    ]);
   });
 
   it("writes a patch the shared filter store accepts as-is", () => {

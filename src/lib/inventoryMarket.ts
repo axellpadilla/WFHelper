@@ -293,11 +293,18 @@ export function metricNeedsFromFilters(
   activeTab: InventoryFilterTab,
 ): MetricNeeds {
   const needsDucatsForTab =
-    activeTab === "all_parts" || activeTab === "full_sets" || activeTab === "everything";
+    activeTab === "all_parts" ||
+    activeTab === "relics" ||
+    activeTab === "full_sets" ||
+    activeTab === "everything";
   const needsOrdersForTab = isRankedGroup(activeTab) || activeTab === "everything";
   return {
     price: true,
-    ducats: needsDucatsForTab || filters.sortBy === "ducats" || filters.sortBy === "ducatonator",
+    ducats:
+      needsDucatsForTab ||
+      filters.minimumDucats > 0 ||
+      filters.sortBy === "ducats" ||
+      filters.sortBy === "ducatonator",
     orders: needsOrdersForTab,
   };
 }

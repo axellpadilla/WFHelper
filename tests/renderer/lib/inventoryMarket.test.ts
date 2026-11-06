@@ -421,6 +421,7 @@ describe("inventoryMarket view mapping", () => {
         partType: "all",
         favorite: "all",
         minimumPlatinum: 0,
+        minimumDucats: 0,
         minimumAmount: 0,
         equipped: "all",
         leveledUp: "all",
@@ -431,6 +432,34 @@ describe("inventoryMarket view mapping", () => {
     );
 
     expect(needs.price).toBe(true);
+    expect(needs.ducats).toBe(true);
+  });
+
+  it("hydrates ducats when a minimum ducat filter is active", () => {
+    const needs = metricNeedsFromFilters(
+      {
+        search: "",
+        primeMode: "all",
+        masteredMode: "all",
+        sortBy: "name",
+        sortDirection: "asc",
+        orderPlaced: "all",
+        mastered: "all",
+        spares: "all",
+        vaulted: "all",
+        partType: "all",
+        favorite: "all",
+        minimumPlatinum: 0,
+        minimumDucats: 20,
+        minimumAmount: 0,
+        equipped: "all",
+        leveledUp: "all",
+        subsumed: "all",
+        foundryState: "all",
+      },
+      "mods",
+    );
+
     expect(needs.ducats).toBe(true);
   });
 
@@ -1029,6 +1058,7 @@ describe("everything tab", () => {
     partType: "all",
     favorite: "all",
     minimumPlatinum: 0,
+    minimumDucats: 0,
     minimumAmount: 0,
     equipped: "all",
     leveledUp: "all",

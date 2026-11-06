@@ -188,12 +188,18 @@
     ["platinum", $tr("common.platinum")],
     ["amount", $tr("filters.amount")],
   ] as Array<[SharedSortKey, string]>;
+  $: DUCAT_SORT_OPTIONS = [
+    ...PRICED_SORT_OPTIONS,
+    ["ducatonator", $tr("filters.ducatonator")],
+  ] as Array<[SharedSortKey, string]>;
   $: RESOURCE_SORT_OPTIONS = [
     ["name", $tr("common.name")],
     ["amount", $tr("filters.amount")],
   ] as Array<[SharedSortKey, string]>;
   $: SORT_OPTIONS_BY_TAB = {
+    everything: DUCAT_SORT_OPTIONS,
     all_parts: FULL_SORT_OPTIONS,
+    relics: DUCAT_SORT_OPTIONS,
     full_sets: FULL_SORT_OPTIONS,
     resources: RESOURCE_SORT_OPTIONS,
   } as Partial<Record<InventoryFilterTab, Array<[SharedSortKey, string]>>>;
@@ -698,6 +704,7 @@
     if (state.equipped !== "all") active++;
     if (state.leveledUp !== "all") active++;
     if (state.minimumPlatinum > 0) active++;
+    if (state.minimumDucats > 0) active++;
     if (state.minimumAmount > 0) active++;
     return active;
   }
@@ -706,7 +713,11 @@
   // A column header only sorts by a key this tab can compute; anything else
   // would silently fall back to a name sort, exactly like the sort dropdown.
   $: tabSortKeys = new Set<string>(tabSortOptions.map(([key]) => key));
-  $: showDucats = filter === "all_parts" || filter === "full_sets" || filter === "everything";
+  $: showDucats =
+    filter === "all_parts" ||
+    filter === "relics" ||
+    filter === "full_sets" ||
+    filter === "everything";
   $: metricNeeds = metricNeedsFromFilters($inventoryFilters, filter);
   $: wfmItemsLoaded = Object.keys($wfmItems).length > 0;
   $: if (filter !== "pets" && $startupPriceCacheReady && wfmItemsLoaded) {
