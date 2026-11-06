@@ -48,69 +48,50 @@
 
 {#if rows.length > 0}
   <div
-    class="mt-3 mb-3 flex flex-col gap-3 rounded-lg border border-border/70 bg-bg-raised p-3 xl:flex-row xl:items-center xl:justify-between"
+    class="mt-3 mb-3 flex flex-wrap items-center gap-x-5 gap-y-2"
     data-inventory-value-strip
     title={$tr("inventory.value.hint")}
   >
-    <div class="flex min-w-0 flex-1 flex-col gap-2">
-      <span class="text-xs font-semibold tracking-wide text-text-muted uppercase">
-        {$tr("inventory.value.title")}
-      </span>
+    <span class="text-xs font-semibold tracking-wide text-text-muted uppercase">
+      {$tr("inventory.value.title")}
+    </span>
 
-      <div class="flex flex-wrap gap-2">
-        {#each rows as row, index (row.key)}
-          <div
-            class="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-surface-card px-2.5 py-2"
-            data-value-scope={row.key}
+    {#each rows as row, index (row.key)}
+      <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1" data-value-scope={row.key}>
+        <span
+          class="text-xs font-semibold {index === 0 ? 'text-text-secondary' : 'text-text-muted'}"
+        >
+          {row.label}
+        </span>
+        <span
+          class="inline-flex items-baseline gap-1 font-display font-bold {index === 0
+            ? 'text-base text-accent-bright'
+            : 'text-sm text-text-secondary'}"
+          data-value-platinum
+        >
+          <img src={PLAT_ICON} alt="" class="h-3.5 w-3.5 shrink-0 self-center object-contain" />
+          {figure(row.totals.platinum, row.totals.platinumUnpriced, $locale, $tr)}
+        </span>
+        {#if hasDucats(row.totals)}
+          <span
+            class="inline-flex items-baseline gap-1 font-display font-bold {index === 0
+              ? 'text-base text-accent'
+              : 'text-sm text-text-secondary'}"
+            data-value-ducats
           >
-            <span
-              class="rounded-full bg-bg-raised px-2 py-1 text-[11px] font-semibold text-text-secondary"
-            >
-              {row.label}
-            </span>
-            <span
-              class="inline-flex items-baseline gap-1 rounded-full bg-bg-raised px-2 py-1 font-display font-bold {index ===
-              0
-                ? 'text-base text-accent-bright'
-                : 'text-sm text-text-secondary'}"
-              data-value-platinum
-            >
-              <img src={PLAT_ICON} alt="" class="h-3.5 w-3.5 shrink-0 self-center object-contain" />
-              {figure(row.totals.platinum, row.totals.platinumUnpriced, $locale, $tr)}
-            </span>
-            {#if hasDucats(row.totals)}
-              <span
-                class="inline-flex items-baseline gap-1 rounded-full bg-bg-raised px-2 py-1 font-display font-bold {index ===
-                0
-                  ? 'text-base text-accent'
-                  : 'text-sm text-text-secondary'}"
-                data-value-ducats
-              >
-                <img
-                  src={DUCAT_ICON}
-                  alt=""
-                  class="h-3.5 w-3.5 shrink-0 self-center object-contain"
-                />
-                {figure(row.totals.ducats, row.totals.ducatsUnpriced, $locale, $tr)}
-              </span>
-            {/if}
-            {#if index === 0 && row.totals.unpriced > 0}
-              <span
-                class="rounded-full bg-bg-raised px-2 py-1 text-[11px] text-text-muted"
-                data-value-unpriced
-              >
-                {$tr("inventory.value.unpriced", { count: row.totals.unpriced })}
-              </span>
-            {/if}
-          </div>
-        {/each}
+            <img src={DUCAT_ICON} alt="" class="h-3.5 w-3.5 shrink-0 self-center object-contain" />
+            {figure(row.totals.ducats, row.totals.ducatsUnpriced, $locale, $tr)}
+          </span>
+        {/if}
+        {#if index === 0 && row.totals.unpriced > 0}
+          <span class="text-[11px] text-text-muted" data-value-unpriced>
+            {$tr("inventory.value.unpriced", { count: row.totals.unpriced })}
+          </span>
+        {/if}
       </div>
-    </div>
+    {/each}
 
-    <div
-      class="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-bg-base/60 p-2"
-      data-value-calculation-controls
-    >
+    <div class="flex flex-wrap items-center gap-2" data-value-calculation-controls>
       <div class="filter-tabs" data-value-scope-toggle>
         <button
           type="button"
