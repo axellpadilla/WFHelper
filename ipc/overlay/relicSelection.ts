@@ -6,6 +6,7 @@ import {
   DEFAULT_RELIC_PLANNER_FILTERS,
   normalizeRelicOverlayFilterPush,
   relicDucatonator,
+  relicGoldReward,
   relicOwnedCountForMode,
   relicQualityForMode,
   selectRelicPlannerRows,
@@ -39,6 +40,19 @@ const REOPEN_SUPPRESS_AFTER_CLOSE_MS = 3_000;
 const OVERLAY_AUTO_HIDE_SUCCESS_MS = 120_000;
 const OVERLAY_AUTO_HIDE_FAILURE_MS = 4_500;
 const OVERLAY_AUTO_HIDE_DETECTING_MAX_MS = 20_000;
+
+/** Every refinement shares its Rare reward, so intact's drop list is sufficient. */
+function groupGoldPrice(
+  group: RelicGroup,
+  priceLookup: (slug: string) => number | null,
+): number | null {
+  const rewards =
+    group.qualities?.intact?.rewards ??
+    Object.values(group.qualities || {}).find((quality) => quality?.rewards?.length)?.rewards ??
+    [];
+  const slug = normalizeWfmSlugKey(relicGoldReward(rewards)?.urlName);
+  return slug ? priceLookup(slug) : null;
+}
 
 const QUALITY_ORDER: readonly RelicQuality[] = Object.freeze([
   "radiant",
@@ -551,6 +565,7 @@ export function createRelicSelectionController(options: OverlayRecommendationCon
   function applyPushedFilters(
     built: ReadonlyArray<{ group: RelicGroup; ownedRow: OwnedCountRow; row: RecommendationRow }>,
     filters: RelicPlannerFilters,
+    getPrice: (slug: string) => number | null,
   ): RecommendationRow[] {
     const qualityLabels = filters.search ? searchQualityLabels() : undefined;
     const plannerRows = built.map((entry) => ({
@@ -561,6 +576,7 @@ export function createRelicSelectionController(options: OverlayRecommendationCon
       ownedCount: relicOwnedCountForMode(entry.ownedRow, filters.qualityMode),
       ownedTotal: relicOwnedCountForMode(entry.ownedRow, "owned"),
       plat: entry.row.platEv,
+      gold: groupGoldPrice(entry.group, getPrice),
       ducat: entry.row.ducatEv,
       ratio: relicDucatonator(entry.row.platEv, entry.row.ducatEv),
     }));
@@ -646,7 +662,7 @@ export function createRelicSelectionController(options: OverlayRecommendationCon
     }
 
     const rows = filters
-      ? applyPushedFilters(built, filters)
+      ? applyPushedFilters(built, filters, getPrice)
       : built.map((entry) => entry.row).sort(compareOverlayDefaultRows);
 
     cache = {
@@ -1032,7 +1048,7 @@ export function createRelicSelectionController(options: OverlayRecommendationCon
       `[RelicSelection] desktop filters updated: squadSize=${desktopSquadSize} ` +
         `tierHint=${desktopTierHint || "all"} sort=${filters.sortMode}/${filters.sortDirection} ` +
         `quality=${filters.qualityMode} vaulted=${filters.vaultedMode} ` +
-        `copies=${filters.ownedAbove || "any"} ` +
+        `copies=${filters.ownedAbove || "any"} gold=${filters.goldAtLeast || "any"} ` +
         `search=${filters.search ? "yes" : "no"} needed=${desktopNeededRewardKeys?.size ?? "off"} ` +
         `pinned=${desktopPinnedQualities?.size ?? 0}`,
     );

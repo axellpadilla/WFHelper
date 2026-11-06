@@ -2,7 +2,7 @@ import { asRecord } from "./objectValidation";
 
 export type RelicQuality = "intact" | "exceptional" | "flawless" | "radiant";
 export type RelicQualityMode = "owned" | RelicQuality;
-export type RelicSortMode = "tier" | "name" | "ev" | "ducat" | "ducatonator" | "owned";
+export type RelicSortMode = "tier" | "name" | "ev" | "gold" | "ducat" | "ducatonator" | "owned";
 export type RelicVaultedMode = "all" | "vaulted" | "unvaulted";
 export type RelicSortDirection = "asc" | "desc";
 
@@ -25,6 +25,7 @@ const SORT_MODES: readonly RelicSortMode[] = [
   "tier",
   "name",
   "ev",
+  "gold",
   "ducat",
   "ducatonator",
   "owned",
@@ -36,6 +37,9 @@ const QUALITY_MODE_CHOICES: readonly RelicQualityMode[] = ["owned", ...RELIC_QUA
 /** Copy thresholds the "more than N" filter offers; 0 keeps every relic. */
 export const RELIC_OWNED_ABOVE_STEPS: readonly number[] = Object.freeze([2, 4, 6, 8, 10]);
 const OWNED_ABOVE_VALUES: readonly number[] = Object.freeze([0, ...RELIC_OWNED_ABOVE_STEPS]);
+
+/** Highest accepted gold-part price; anything above it is almost certainly a typo. */
+export const RELIC_GOLD_AT_LEAST_MAX = 100_000;
 
 const MAX_SEARCH_LENGTH = 200;
 const MIN_SQUAD_SIZE = 1;
@@ -54,6 +58,8 @@ export interface RelicPlannerFilters {
   qualityMode: RelicQualityMode;
   /** Hides relics whose total copies are at or below this; 0 is off. */
   ownedAbove: number;
+  /** Hides relics whose Rare reward sells for less than this; 0 is off. */
+  goldAtLeast: number;
   sortMode: RelicSortMode;
   sortDirection: RelicSortDirection;
 }
@@ -65,6 +71,7 @@ export const DEFAULT_RELIC_PLANNER_FILTERS: RelicPlannerFilters = {
   vaultedMode: "all",
   qualityMode: "owned",
   ownedAbove: 0,
+  goldAtLeast: 0,
   sortMode: "tier",
   sortDirection: "asc",
 };
@@ -80,6 +87,8 @@ interface RelicPlannerRow {
    *  ownedCount so the quality select cannot change what it hides. */
   ownedTotal: number;
   plat: number | null;
+  /** Market price of the relic's Rare reward. */
+  gold: number | null;
   ducat: number | null;
   ratio: number | null;
 }
@@ -122,6 +131,26 @@ export function relicQualityForMode(
   if (qualityMode !== "owned") return qualityMode;
   if (preferred && (owned?.[preferred] ?? 0) > 0) return preferred;
   return highestOwnedQuality(RELIC_QUALITY_MODES, (quality) => owned?.[quality] ?? 0);
+}
+
+interface RelicRewardRarity {
+  rarity?: string | null;
+  chance?: number | null;
+}
+
+/** The relic's Rare reward, or its least likely drop when rarity is unavailable. */
+export function relicGoldReward<R extends RelicRewardRarity>(rewards: readonly R[]): R | null {
+  const rare = rewards.find((reward) => reward.rarity?.toLowerCase() === "rare");
+  if (rare) return rare;
+
+  let leastLikely: R | null = null;
+  for (const reward of rewards) {
+    if (typeof reward.chance !== "number") continue;
+    if (!leastLikely || reward.chance < (leastLikely.chance ?? Infinity)) {
+      leastLikely = reward;
+    }
+  }
+  return leastLikely;
 }
 
 export function relicDucatonator(plat: number | null, ducat: number | null): number | null {
@@ -168,6 +197,9 @@ function compareRelicPlannerRows(
   if (sortMode === "owned") {
     return compareNullableRelicMetric(a, b, direction, (row) => row.ownedCount);
   }
+  if (sortMode === "gold") {
+    return compareNullableRelicMetric(a, b, direction, (row) => row.gold);
+  }
 
   const metricKey = sortMode === "ducatonator" ? "ratio" : sortMode === "ducat" ? "ducat" : "plat";
   return compareNullableRelicMetric(a, b, direction, (row) => row[metricKey]);
@@ -182,6 +214,8 @@ export function selectRelicPlannerRows<T extends RelicPlannerRow>(
   const kept = rows.filter((row) => {
     if (vaultedMode !== "all" && row.vaulted !== (vaultedMode === "vaulted")) return false;
     if (filters.ownedAbove > 0 && row.ownedTotal <= filters.ownedAbove) return false;
+    if (filters.goldAtLeast > 0 && (row.gold == null || row.gold < filters.goldAtLeast))
+      return false;
     if (filters.search && !hooks.matchesSearch(row)) return false;
     if (filters.containsNeededReward && !hooks.hasNeededReward(row)) return false;
     return true;
@@ -218,6 +252,15 @@ function ownedAboveOr(value: unknown, fallback: number): number {
   return typeof value === "number" && OWNED_ABOVE_VALUES.includes(value) ? value : fallback;
 }
 
+function goldAtLeastOr(value: unknown, fallback: number): number {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= RELIC_GOLD_AT_LEAST_MAX
+    ? value
+    : fallback;
+}
+
 /** Untrusted IPC payload -> filters, every field falling back to the state the
  *  overlay already runs on. */
 function normalizeRelicPlannerFilters(
@@ -238,6 +281,7 @@ function normalizeRelicPlannerFilters(
     vaultedMode: oneOf(record.vaultedMode, VAULTED_MODES, fallback.vaultedMode),
     qualityMode: oneOf(record.qualityMode, QUALITY_MODE_CHOICES, fallback.qualityMode),
     ownedAbove: ownedAboveOr(record.ownedAbove, fallback.ownedAbove),
+    goldAtLeast: goldAtLeastOr(record.goldAtLeast, fallback.goldAtLeast),
     sortMode: oneOf(record.sortMode, SORT_MODES, fallback.sortMode),
     sortDirection: oneOf(record.sortDirection, SORT_DIRECTIONS, fallback.sortDirection),
   };

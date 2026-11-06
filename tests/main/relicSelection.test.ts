@@ -1129,6 +1129,20 @@ describe("relic selection planner", () => {
     ]);
   });
 
+  it("sorts and filters overlay relics by the Rare reward price", async () => {
+    const { push, labels } = makePlannerFilterController();
+
+    push({ sortMode: "gold", sortDirection: "desc" });
+    expect(await labels()).toEqual([
+      "1x Lith Charlie Intact",
+      "1x Lith Alpha Radiant",
+      "5x Lith Bravo Intact",
+    ]);
+
+    push({ goldAtLeast: 11, sortMode: "name", sortDirection: "asc" });
+    expect(await labels()).toEqual(["1x Lith Charlie Intact"]);
+  });
+
   it("counts every owned grade for the owned sort, like the planner card does", async () => {
     const { push, labels } = makePlannerFilterController();
     push({ sortMode: "owned", sortDirection: "desc" });
