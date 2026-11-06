@@ -316,6 +316,7 @@
     "ocrDebugImagesEnabled",
     "blockThirdPartyInjection",
     "keepRunningOnClose",
+    "updateChecksEnabled",
     "warframeLifecycleEnabled",
     "warframeUiScale",
     "warframeUiScaleAuto",
@@ -750,6 +751,17 @@
                 <input
                   type="checkbox"
                   bind:checked={form.keepRunningOnClose}
+                  on:change={autoSave}
+                />
+              </SettingsRow>
+              <SettingsRow
+                label={$tr("settings.updateChecks")}
+                hint={$tr("settings.updateChecksHint")}
+                dataSetting="update-checks"
+              >
+                <input
+                  type="checkbox"
+                  bind:checked={form.updateChecksEnabled}
                   on:change={autoSave}
                 />
               </SettingsRow>

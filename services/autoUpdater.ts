@@ -19,11 +19,13 @@ const UPDATE_FEED_PROBE_TIMEOUT_MS = 5_000;
 // flag a new version; downloads and installs always require a user click.
 const STARTUP_UPDATE_CHECK_DELAY_MS = 8_000;
 const PERIODIC_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const AUTO_CHECKS_DISABLED_MESSAGE = "Automatic update checks are disabled.";
 
 let mainWindow: import("electron").BrowserWindow | null = null;
 let initialized = false;
 let checkPromise: Promise<{ ok: boolean; source: string; state: UpdateState }> | null = null;
 let disabledReason: string | null = null;
+let checksEnabled = true;
 let startupCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let periodicCheckTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -71,6 +73,36 @@ function setUpdateState(status: string, patch: Partial<UpdateState> = {}): void 
     timestamp: Date.now(),
   };
   emitUpdateState();
+}
+
+function clearAutoCheckTimers(): void {
+  if (startupCheckTimer) {
+    clearTimeout(startupCheckTimer);
+    startupCheckTimer = null;
+  }
+  if (periodicCheckTimer) {
+    clearInterval(periodicCheckTimer);
+    periodicCheckTimer = null;
+  }
+}
+
+/** Gate the automatic startup/periodic checks. Manual checks stay available so
+ *  a user who turned the popup off can still ask from the status bar. */
+export function setUpdateChecksEnabled(enabled: boolean): void {
+  if (checksEnabled === enabled) return;
+  checksEnabled = enabled;
+
+  if (!enabled) {
+    clearAutoCheckTimers();
+    if (initialized) setUpdateState("disabled", { message: AUTO_CHECKS_DISABLED_MESSAGE });
+    return;
+  }
+
+  if (!initialized) return;
+  if (updateState.status === "disabled" && updateState.message === AUTO_CHECKS_DISABLED_MESSAGE) {
+    setUpdateState("idle", { message: undefined });
+  }
+  scheduleAutoChecks();
 }
 
 function normalizeReleaseNotes(notes: UpdateInfo["releaseNotes"]): string | null {
@@ -281,12 +313,14 @@ export function initialize(windowRef: import("electron").BrowserWindow): void {
     setUpdateState("error", { message });
   });
 
-  scheduleAutoChecks();
+  if (checksEnabled) scheduleAutoChecks();
+  else setUpdateState("disabled", { message: AUTO_CHECKS_DISABLED_MESSAGE });
 }
 
 // Read-only auto-checks so the UI can surface updates without a manual click.
 // Never triggers a download or install - those stay user-driven.
 function scheduleAutoChecks(): void {
+  if (!checksEnabled) return;
   if (startupCheckTimer || periodicCheckTimer) return;
 
   startupCheckTimer = setTimeout(() => {
