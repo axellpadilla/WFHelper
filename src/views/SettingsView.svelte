@@ -1363,6 +1363,9 @@
               {/each}
             </div>
             {#if isLinux}
+              <p class="mt-2 text-xs text-muted-foreground">
+                {$tr("settings.waylandShortcutHint")}
+              </p>
               <div class="mt-2.5 flex flex-wrap gap-2">
                 <button
                   class="btn-secondary btn-sm"

@@ -9,12 +9,12 @@ import { app, BrowserWindow, crashReporter, globalShortcut, powerMonitor } from 
 
 import * as linuxDisplay from "./services/linuxDisplayBackend";
 import { layerOutputRects, probeLayerShell } from "./services/layerShell";
-import { isOverlayToggleLaunch, secondLaunchAction, startupAction } from "./services/launchArgs";
+import { isOverlayActionLaunch, secondLaunchAction, startupAction } from "./services/launchArgs";
 import { choosePasswordStore } from "./services/linuxKeyring";
 
-// Without a display backend a toggle launch skips the XWayland re-exec, so one key
+// An action launch skips display detection and the XWayland re-exec, so one key
 // press reaches the running instance once.
-const DISPLAY_BACKEND = isOverlayToggleLaunch(process.argv)
+const DISPLAY_BACKEND = isOverlayActionLaunch(process.argv)
   ? "auto"
   : linuxDisplay.initialize(
       app.getPath("userData"),
@@ -50,6 +50,22 @@ if (DISPLAY_BACKEND === "x11") {
     } catch {
       // Starting on the wayland default beats not starting at all.
     }
+  }
+}
+
+// Chromium otherwise may not request org.freedesktop.portal.GlobalShortcuts on
+// native Wayland. Preserve any features supplied by the user or the launcher.
+if (process.platform === "linux" && linuxDisplay.isNativeWayland()) {
+  const features = app.commandLine
+    .getSwitchValue("enable-features")
+    .split(",")
+    .map((feature) => feature.trim())
+    .filter(Boolean);
+  if (!features.includes("GlobalShortcutsPortal")) {
+    app.commandLine.appendSwitch(
+      "enable-features",
+      [...features, "GlobalShortcutsPortal"].join(","),
+    );
   }
 }
 
@@ -222,11 +238,16 @@ if (startup === "exit-quietly") {
   app.on("second-instance", (_event, argv) => {
     const action = secondLaunchAction(argv);
     if (action === "reveal") revealMainWindow();
-    if (action !== "toggle-overlay-interaction") return;
-    const mode = overlayIpc.toggleOverlayInteractionMode("launch-flag");
-    log.info(
-      `[Main] toggle launch: ${mode === null ? "no overlay on screen" : mode ? "interactive" : "click-through"}`,
-    );
+    if (action === "toggle-overlay-interaction") {
+      const mode = overlayIpc.toggleOverlayInteractionMode("launch-flag");
+      log.info(
+        `[Main] toggle launch: ${mode === null ? "no overlay on screen" : mode ? "interactive" : "click-through"}`,
+      );
+    } else if (action === "trigger-reward-scan") {
+      overlayIpc.onRelicRewardTrigger("launch-flag");
+    } else if (action === "trigger-riven-scan") {
+      overlayIpc.onRivenRescanTrigger("launch-flag");
+    }
   });
 }
 

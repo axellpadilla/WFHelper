@@ -1,0 +1,709 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+interface ShortcutBackend {
+  register(accelerator: string, callback: () => void): boolean;
+  unregister(accelerator: string): void;
+}
+
+interface Logger {
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+}
+
+export interface PortalShortcut {
+  id: string;
+  trigger: string;
+}
+
+/** The small, injectable surface used by the portal lifecycle and its tests. */
+export interface XdgGlobalShortcutsBindings {
+  connect(): unknown;
+  getVersion(connection: unknown): number;
+  registerApp(connection: unknown): void;
+  subscribeActivated(connection: unknown, callback: (id: string) => void): unknown;
+  createSession(connection: unknown, callback: (handle: string | null) => void): void;
+  bindShortcuts(connection: unknown, session: string, shortcuts: PortalShortcut[]): void;
+  closeSession(connection: unknown, session: string): void;
+  unsubscribe(connection: unknown, subscription: unknown): void;
+  iterateMainContext(): void;
+}
+
+const MODIFIERS: Record<string, string> = {
+  ctrl: "CTRL",
+  control: "CTRL",
+  commandorcontrol: "CTRL",
+  alt: "ALT",
+  option: "ALT",
+  shift: "SHIFT",
+  logo: "LOGO",
+  meta: "LOGO",
+  super: "LOGO",
+  command: "LOGO",
+};
+
+const SPECIAL_KEYS: Record<string, string> = {
+  enter: "Return",
+  return: "Return",
+  backspace: "BackSpace",
+  tab: "Tab",
+  escape: "Escape",
+  esc: "Escape",
+  space: "space",
+  insert: "Insert",
+  delete: "Delete",
+  home: "Home",
+  end: "End",
+  pageup: "Page_Up",
+  pagedown: "Page_Down",
+  left: "Left",
+  right: "Right",
+  up: "Up",
+  down: "Down",
+  comma: "comma",
+  period: "period",
+  minus: "minus",
+  equal: "equal",
+};
+
+/** Convert an Electron accelerator to the XDG GlobalShortcuts trigger syntax. */
+export function electronToXdgTrigger(accelerator: string): string | null {
+  const parts = accelerator
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const keyPart = parts.pop();
+  if (!keyPart || parts.length !== accelerator.split("+").length - 1) return null;
+
+  const modifiers = new Set<string>();
+  for (const part of parts) {
+    const modifier = MODIFIERS[part.toLowerCase()];
+    if (!modifier) return null;
+    modifiers.add(modifier);
+  }
+
+  const keyLower = keyPart.toLowerCase();
+  const functionKey = /^f([1-9]|1\d|2[0-4])$/i.test(keyPart) ? keyPart.toUpperCase() : null;
+  const key =
+    functionKey ?? SPECIAL_KEYS[keyLower] ?? (/^[a-z0-9]$/i.test(keyPart) ? keyPart : null);
+  if (!key) return null;
+
+  const order = ["CTRL", "ALT", "SHIFT", "LOGO"];
+  return [...order.filter((modifier) => modifiers.has(modifier)), key].join("+");
+}
+
+interface EnsurePortalDesktopFileOptions {
+  env?: NodeJS.ProcessEnv;
+  homeDir?: string;
+  existsSync?: (file: string) => boolean;
+  mkdirSync?: (directory: string, options: { recursive: true }) => unknown;
+  writeFileSync?: (file: string, content: string, encoding: BufferEncoding) => void;
+}
+
+/** Ensure the portal's host registry can resolve the wfhelper application ID. */
+export function ensurePortalDesktopFile(options: EnsurePortalDesktopFileOptions = {}): string {
+  const env = options.env ?? process.env;
+  const userData =
+    env.XDG_DATA_HOME || path.join(options.homeDir ?? os.homedir(), ".local", "share");
+  const userDesktop = path.join(userData, "applications", "wfhelper.desktop");
+  const systemDesktop = "/usr/share/applications/wfhelper.desktop";
+  const existsSync = options.existsSync ?? fs.existsSync;
+  if (existsSync(userDesktop)) return userDesktop;
+  if (existsSync(systemDesktop)) return systemDesktop;
+
+  const directory = path.dirname(userDesktop);
+  (options.mkdirSync ?? fs.mkdirSync)(directory, { recursive: true });
+  (options.writeFileSync ?? fs.writeFileSync)(
+    userDesktop,
+    "[Desktop Entry]\nType=Application\nName=WFHelper\nNoDisplay=true\nExec=wfhelper\n",
+    "utf8",
+  );
+  return userDesktop;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- koffi/GVariant are dynamic C FFI surfaces */
+interface NativeKoffi {
+  load(name: string): { func(signature: string): (...args: any[]) => any };
+  proto(signature: string): unknown;
+  pointer(type: unknown): unknown;
+  register(callback: (...args: any[]) => void, type: unknown): unknown;
+  unregister(callback: unknown): void;
+}
+
+function loadNativeBindings(): XdgGlobalShortcutsBindings {
+  const koffi = require("koffi") as NativeKoffi;
+  const glib = koffi.load("libglib-2.0.so.0");
+  const gio = koffi.load("libgio-2.0.so.0");
+
+  const gBusGetSync = gio.func(
+    "void *g_bus_get_sync(int bus_type, void *cancellable, _Out_ void **error)",
+  );
+  const gDbusCall = gio.func(
+    "void *g_dbus_connection_call_sync(void *connection, const char *bus_name, const char *object_path, const char *interface_name, const char *method_name, void *parameters, void *reply_type, int flags, int timeout_msec, void *cancellable, _Out_ void **error)",
+  );
+  const gSignalSubscribe = gio.func(
+    "unsigned int g_dbus_connection_signal_subscribe(void *connection, const char *sender, const char *interface_name, const char *member, const char *object_path, const char *arg0, int flags, void *callback, void *user_data, void *user_data_free_func)",
+  );
+  const gSignalUnsubscribe = gio.func(
+    "void g_dbus_connection_signal_unsubscribe(void *connection, unsigned int subscription_id)",
+  );
+  const gMainContextIteration = glib.func(
+    "int g_main_context_iteration(void *context, int may_block)",
+  );
+  const gVariantNew = glib.func("void *g_variant_new(const char *format_string, ...)");
+  const gVariantNewString = glib.func("void *g_variant_new_string(const char *string)");
+  const gVariantBuilderNew = glib.func("void *g_variant_builder_new(void *type)");
+  const gVariantTypeNew = glib.func("void *g_variant_type_new(const char *type_string)");
+  const gVariantBuilderAdd = glib.func(
+    "void g_variant_builder_add(void *builder, const char *format_string, ...)",
+  );
+  const gVariantBuilderEnd = glib.func("void *g_variant_builder_end(void *builder)");
+  const gVariantBuilderUnref = glib.func("void g_variant_builder_unref(void *builder)");
+  const gVariantGetChildValue = glib.func(
+    "void *g_variant_get_child_value(void *value, unsigned long index)",
+  );
+  const gVariantGetString = glib.func(
+    "const char *g_variant_get_string(void *value, _Out_ unsigned long *length)",
+  );
+  const gVariantGetUint32 = glib.func("unsigned int g_variant_get_uint32(void *value)");
+  const gVariantLookupValue = glib.func(
+    "void *g_variant_lookup_value(void *dictionary, const char *key, void *expected_type)",
+  );
+  const gVariantUnref = glib.func("void g_variant_unref(void *value)");
+  const gErrorFree = glib.func("void g_error_free(void *error)");
+  const signalCallbackType = koffi.proto(
+    "void PortalSignalCallback(void *connection, const char *sender, const char *object_path, const char *interface_name, const char *signal_name, void *parameters, void *user_data)",
+  );
+
+  function variantDict(entries: Record<string, string>): any {
+    const type = gVariantTypeNew("a{sv}");
+    const builder = gVariantBuilderNew(type);
+    for (const [key, value] of Object.entries(entries)) {
+      gVariantBuilderAdd(builder, "{sv}", "str", key, "void *", gVariantNewString(value));
+    }
+    const result = gVariantBuilderEnd(builder);
+    gVariantBuilderUnref(builder);
+    return result;
+  }
+
+  function call(
+    connection: any,
+    interfaceName: string,
+    method: string,
+    parameters: any,
+    objectPath = "/org/freedesktop/portal/desktop",
+  ): any {
+    const error: any[] = [null];
+    let reply: any;
+    try {
+      reply = gDbusCall(
+        connection,
+        "org.freedesktop.portal.Desktop",
+        objectPath,
+        interfaceName,
+        method,
+        parameters,
+        null,
+        0,
+        5000,
+        null,
+        error,
+      );
+    } finally {
+      if (parameters) gVariantUnref(parameters);
+    }
+    if (!reply) {
+      const message = error[0] ? String(error[0]) : `${interfaceName}.${method} failed`;
+      if (error[0]) gErrorFree(error[0]);
+      throw new Error(message);
+    }
+    return reply;
+  }
+
+  function subscribe(
+    connection: any,
+    interfaceName: string,
+    member: string,
+    objectPath: string | null,
+    callback: (parameters: any, signalObjectPath: string) => void,
+  ): any {
+    const cb = koffi.register(
+      (
+        _conn: unknown,
+        _sender: unknown,
+        signalPath: unknown,
+        _iface: unknown,
+        _member: unknown,
+        parameters: any,
+      ) => callback(parameters, typeof signalPath === "string" ? signalPath : ""),
+      koffi.pointer(signalCallbackType),
+    );
+    const id = gSignalSubscribe(
+      connection,
+      null,
+      interfaceName,
+      member,
+      objectPath,
+      null,
+      0,
+      cb,
+      null,
+      null,
+    );
+    return { id, cb };
+  }
+
+  function unsubscribe(connection: any, subscription: any): void {
+    if (!subscription) return;
+    gSignalUnsubscribe(connection, subscription.id);
+    koffi.unregister(subscription.cb);
+  }
+
+  const requestInterface = "org.freedesktop.portal.Request";
+  const sessionInterface = "org.freedesktop.portal.Session";
+  const shortcutsInterface = "org.freedesktop.portal.GlobalShortcuts";
+  let cachedConnection: any = null;
+  let activatedSubscription: any = null;
+  const transientSubscriptions = new Set<any>();
+
+  function clearTransientSubscriptions(connection: any): void {
+    for (const subscription of [...transientSubscriptions]) {
+      transientSubscriptions.delete(subscription);
+      unsubscribe(connection, subscription);
+    }
+  }
+
+  return {
+    connect() {
+      if (cachedConnection) return cachedConnection;
+      const error: any[] = [null];
+      const connection = gBusGetSync(2, null, error);
+      if (!connection) {
+        const message = error[0] ? String(error[0]) : "Could not connect to the session bus";
+        if (error[0]) gErrorFree(error[0]);
+        throw new Error(message);
+      }
+      cachedConnection = connection;
+      return connection;
+    },
+    getVersion(connection) {
+      const reply = call(
+        connection,
+        "org.freedesktop.DBus.Properties",
+        "Get",
+        gVariantNew("(ss)", "str", shortcutsInterface, "str", "version"),
+      );
+      try {
+        const outer = gVariantGetChildValue(reply, 0);
+        try {
+          const value = gVariantGetChildValue(outer, 0);
+          try {
+            return gVariantGetUint32(value);
+          } finally {
+            gVariantUnref(value);
+          }
+        } finally {
+          gVariantUnref(outer);
+        }
+      } finally {
+        gVariantUnref(reply);
+      }
+    },
+    registerApp(connection) {
+      const options = variantDict({});
+      const parameters = gVariantNew("(s@a{sv})", "str", "wfhelper", "void *", options);
+      const reply = call(
+        connection,
+        "org.freedesktop.host.portal.Registry",
+        "Register",
+        parameters,
+      );
+      gVariantUnref(reply);
+    },
+    subscribeActivated(connection, callback) {
+      activatedSubscription = subscribe(
+        connection,
+        shortcutsInterface,
+        "Activated",
+        null,
+        (parameters) => {
+          const idValue = gVariantGetChildValue(parameters, 1);
+          try {
+            callback(String(gVariantGetString(idValue, null)));
+          } finally {
+            gVariantUnref(idValue);
+          }
+        },
+      );
+      return activatedSubscription;
+    },
+    createSession(connection, callback) {
+      const token = `wfhelper_${process.pid}_${Date.now()}`;
+      const requestToken = `${token}_request`;
+      let expectedRequestPath = "";
+      const subscription = subscribe(
+        connection,
+        requestInterface,
+        "Response",
+        null,
+        (response, signalPath) => {
+          if (
+            (expectedRequestPath && signalPath && signalPath !== expectedRequestPath) ||
+            (!expectedRequestPath && signalPath && !signalPath.endsWith(`/${requestToken}`))
+          ) {
+            return;
+          }
+          const responseCode = gVariantGetChildValue(response, 0);
+          const results = gVariantGetChildValue(response, 1);
+          try {
+            if (gVariantGetUint32(responseCode) !== 0) {
+              callback(null);
+              return;
+            }
+            const handle = gVariantLookupValue(results, "session_handle", null);
+            if (!handle) {
+              callback(null);
+              return;
+            }
+            try {
+              callback(String(gVariantGetString(handle, null)));
+            } finally {
+              gVariantUnref(handle);
+            }
+          } finally {
+            gVariantUnref(responseCode);
+            gVariantUnref(results);
+            transientSubscriptions.delete(subscription);
+            unsubscribe(connection, subscription);
+          }
+        },
+      );
+      transientSubscriptions.add(subscription);
+
+      const options = variantDict({
+        session_handle_token: token,
+        handle_token: requestToken,
+      });
+      const parameters = gVariantNew("(@a{sv})", "void *", options);
+      try {
+        const reply = call(connection, shortcutsInterface, "CreateSession", parameters);
+        try {
+          const pathValue = gVariantGetChildValue(reply, 0);
+          try {
+            expectedRequestPath = String(gVariantGetString(pathValue, null));
+          } finally {
+            gVariantUnref(pathValue);
+          }
+        } finally {
+          gVariantUnref(reply);
+        }
+      } catch (err) {
+        transientSubscriptions.delete(subscription);
+        unsubscribe(connection, subscription);
+        throw err;
+      }
+    },
+    bindShortcuts(connection, session, shortcuts) {
+      const arrayType = gVariantTypeNew("a(sa{sv})");
+      const builder = gVariantBuilderNew(arrayType);
+      for (const shortcut of shortcuts) {
+        const options = variantDict({
+          preferred_trigger: shortcut.trigger,
+          description: shortcut.id,
+        });
+        gVariantBuilderAdd(builder, "(s@a{sv})", "str", shortcut.id, "void *", options);
+      }
+      const array = gVariantBuilderEnd(builder);
+      gVariantBuilderUnref(builder);
+      const bindOptions = variantDict({ handle_token: `wfhelper_bind_${Date.now()}` });
+      const parameters = gVariantNew(
+        "(o@a(sa{sv})s@a{sv})",
+        "str",
+        session,
+        "void *",
+        array,
+        "str",
+        "",
+        "void *",
+        bindOptions,
+      );
+      const reply = call(connection, shortcutsInterface, "BindShortcuts", parameters);
+      let requestPath: string;
+      try {
+        const pathValue = gVariantGetChildValue(reply, 0);
+        try {
+          requestPath = String(gVariantGetString(pathValue, null));
+        } finally {
+          gVariantUnref(pathValue);
+        }
+      } finally {
+        gVariantUnref(reply);
+      }
+      const subscription = subscribe(connection, requestInterface, "Response", requestPath, () => {
+        transientSubscriptions.delete(subscription);
+        unsubscribe(connection, subscription);
+      });
+      transientSubscriptions.add(subscription);
+    },
+    closeSession(connection, session) {
+      const reply = call(connection, sessionInterface, "Close", gVariantNew("()"), session);
+      gVariantUnref(reply);
+      clearTransientSubscriptions(connection);
+      if (activatedSubscription) {
+        unsubscribe(connection, activatedSubscription);
+        activatedSubscription = null;
+      }
+    },
+    unsubscribe(connection, subscription) {
+      if (subscription === activatedSubscription) activatedSubscription = null;
+      transientSubscriptions.delete(subscription);
+      clearTransientSubscriptions(connection);
+      unsubscribe(connection, subscription);
+    },
+    iterateMainContext() {
+      gMainContextIteration(null, 0);
+    },
+  };
+}
+
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+interface CreateXdgGlobalShortcutsPortalOptions {
+  fallback: ShortcutBackend;
+  log: Logger;
+  bindings?: XdgGlobalShortcutsBindings;
+  desktopFile?: EnsurePortalDesktopFileOptions;
+  platform?: string;
+  now?: () => number;
+  setTimeout?: typeof globalThis.setTimeout;
+  clearTimeout?: typeof globalThis.clearTimeout;
+  setInterval?: typeof globalThis.setInterval;
+  clearInterval?: typeof globalThis.clearInterval;
+}
+
+interface RegisteredShortcut {
+  callback: () => void;
+  portalId: string;
+  trigger: string;
+  lastFiredAt: number;
+}
+
+const BATCH_DELAY_MS = 25;
+const POLL_INTERVAL_MS = 50;
+const DEDUPLICATION_WINDOW_MS = 150;
+
+/** XDG GlobalShortcuts portal with immediate XWayland globalShortcut fallback. */
+export function createXdgGlobalShortcutsPortal(
+  options: CreateXdgGlobalShortcutsPortalOptions,
+): ShortcutBackend & {
+  dispose(): void;
+} {
+  const registered = new Map<string, RegisteredShortcut>();
+  const pending = new Map<string, PortalShortcut>();
+  const now = options.now ?? Date.now;
+  const schedule = options.setTimeout ?? globalThis.setTimeout;
+  const cancel = options.clearTimeout ?? globalThis.clearTimeout;
+  const repeat = options.setInterval ?? globalThis.setInterval;
+  const stopRepeat = options.clearInterval ?? globalThis.clearInterval;
+  const nativePlatform = (options.platform ?? process.platform) === "linux";
+  let bindings = options.bindings;
+  let connection: unknown = null;
+  let session: string | null = null;
+  let sessionBound = false;
+  let activatedSubscription: unknown = null;
+  let batchTimer: ReturnType<typeof setTimeout> | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let portalUnavailable = false;
+  let generation = 0;
+
+  function subscribeActivatedIfNeeded(): void {
+    if (!bindings || !connection || activatedSubscription) return;
+    activatedSubscription = bindings.subscribeActivated(connection, (id) => {
+      const entry = [...registered.values()].find((candidate) => candidate.portalId === id);
+      if (entry) fire(entry);
+    });
+  }
+
+  function startPortalSession(): void {
+    if (!bindings || !connection) return;
+    subscribeActivatedIfNeeded();
+    const initializedConnection = connection;
+    const initializedGeneration = generation;
+    bindings.createSession(connection, (handle) => {
+      if (generation !== initializedGeneration || connection !== initializedConnection) {
+        if (handle) {
+          try {
+            bindings?.closeSession(initializedConnection, handle);
+          } catch (err) {
+            options.log.warn("[XdgGlobalShortcuts] stale session close failed:", String(err));
+          }
+        }
+        return;
+      }
+      if (!handle || registered.size === 0) return;
+      session = handle;
+      sessionBound = false;
+      flushPending();
+    });
+  }
+
+  function ensureInitialized(): void {
+    if (!nativePlatform || portalUnavailable || connection || registered.size === 0) return;
+    try {
+      bindings ??= loadNativeBindings();
+      connection = bindings.connect();
+      const version = bindings.getVersion(connection);
+      if (version < 1) throw new Error(`GlobalShortcuts portal version ${version} is unsupported`);
+      ensurePortalDesktopFile(options.desktopFile);
+      bindings.registerApp(connection);
+      startPortalSession();
+      pollTimer = repeat(() => {
+        try {
+          bindings?.iterateMainContext();
+        } catch (err) {
+          options.log.warn("[XdgGlobalShortcuts] main-context iteration failed:", String(err));
+        }
+      }, POLL_INTERVAL_MS);
+      options.log.info("[XdgGlobalShortcuts] connected to the GlobalShortcuts portal");
+    } catch (err) {
+      portalUnavailable = true;
+      options.log.warn("[XdgGlobalShortcuts] portal unavailable; using X11 fallback:", String(err));
+      cleanupPortal();
+      portalUnavailable = true;
+    }
+  }
+
+  function fire(entry: RegisteredShortcut): void {
+    const timestamp = now();
+    if (timestamp - entry.lastFiredAt < DEDUPLICATION_WINDOW_MS) return;
+    entry.lastFiredAt = timestamp;
+    entry.callback();
+  }
+
+  function flushPending(): void {
+    if (batchTimer) {
+      cancel(batchTimer);
+      batchTimer = null;
+    }
+    if (!session || !bindings || pending.size === 0) return;
+    if (sessionBound) {
+      const oldSession = session;
+      session = null;
+      sessionBound = false;
+      activatedSubscription = null;
+      generation += 1;
+      try {
+        bindings.closeSession(connection, oldSession);
+      } catch (err) {
+        options.log.warn("[XdgGlobalShortcuts] session close on rebind failed:", String(err));
+      }
+      try {
+        startPortalSession();
+      } catch (err) {
+        options.log.warn("[XdgGlobalShortcuts] session recreate failed:", String(err));
+      }
+      return;
+    }
+    const shortcuts = [...registered.values()]
+      .filter((entry) => entry.trigger)
+      .map((entry) => ({ id: entry.portalId, trigger: entry.trigger }));
+    pending.clear();
+    if (shortcuts.length === 0) return;
+    try {
+      sessionBound = true;
+      bindings.bindShortcuts(connection, session, shortcuts);
+    } catch (err) {
+      options.log.warn("[XdgGlobalShortcuts] BindShortcuts failed:", String(err));
+    }
+  }
+
+  function cleanupPortal(): void {
+    generation += 1;
+    if (batchTimer) {
+      cancel(batchTimer);
+      batchTimer = null;
+    }
+    if (pollTimer) {
+      stopRepeat(pollTimer);
+      pollTimer = null;
+    }
+    pending.clear();
+    if (bindings && connection) {
+      if (session) {
+        try {
+          bindings.closeSession(connection, session);
+        } catch (err) {
+          options.log.warn("[XdgGlobalShortcuts] session close failed:", String(err));
+        }
+      } else if (activatedSubscription) {
+        try {
+          bindings.unsubscribe(connection, activatedSubscription);
+        } catch (err) {
+          options.log.warn("[XdgGlobalShortcuts] signal unsubscribe failed:", String(err));
+        }
+      }
+    }
+    session = null;
+    sessionBound = false;
+    connection = null;
+    activatedSubscription = null;
+    portalUnavailable = false;
+  }
+
+  return {
+    register(accelerator, callback): boolean {
+      if (registered.has(accelerator)) return false;
+      const trigger = electronToXdgTrigger(accelerator);
+      const entry: RegisteredShortcut = {
+        callback,
+        portalId: `shortcut_${registered.size}_${Math.random().toString(36).slice(2, 10)}`,
+        trigger: trigger ?? "",
+        lastFiredAt: Number.NEGATIVE_INFINITY,
+      };
+      const ok = options.fallback.register(accelerator, () => fire(entry));
+      if (!ok) return false;
+      registered.set(accelerator, entry);
+      if (!trigger) return true;
+
+      ensureInitialized();
+      if (connection && bindings) {
+        pending.set(accelerator, { id: entry.portalId, trigger });
+        if (!batchTimer) {
+          batchTimer = schedule(() => {
+            batchTimer = null;
+            flushPending();
+          }, BATCH_DELAY_MS);
+        }
+      }
+      return true;
+    },
+    unregister(accelerator): void {
+      const entry = registered.get(accelerator);
+      if (!entry) {
+        options.fallback.unregister(accelerator);
+        return;
+      }
+      registered.delete(accelerator);
+      pending.delete(accelerator);
+      options.fallback.unregister(accelerator);
+      if (registered.size === 0) cleanupPortal();
+      else if (session && entry?.trigger) {
+        pending.set(accelerator, { id: entry.portalId, trigger: entry.trigger });
+        if (!batchTimer) {
+          batchTimer = schedule(() => {
+            batchTimer = null;
+            flushPending();
+          }, BATCH_DELAY_MS);
+        }
+      }
+    },
+    dispose(): void {
+      for (const accelerator of [...registered.keys()]) {
+        options.fallback.unregister(accelerator);
+      }
+      registered.clear();
+      cleanupPortal();
+    },
+  };
+}
