@@ -215,6 +215,34 @@ describe("relic planner filters", () => {
     expect(kept(1000)).toEqual([]);
   });
 
+  it("keeps relics whose platinum EV meets the minimum and excludes unpriced rows", () => {
+    const rows = [
+      row({ name: "Below", plat: 9.5 }),
+      row({ name: "Exact", plat: 10 }),
+      row({ name: "Above", plat: 12 }),
+      row({ name: "Unpriced", plat: null }),
+    ];
+    const kept = (platAtLeast: number) =>
+      names(selectRelicPlannerRows(rows, filters({ platAtLeast }), ALL_PASS));
+
+    expect(kept(0)).toEqual(["Above", "Below", "Exact", "Unpriced"]);
+    expect(kept(10)).toEqual(["Above", "Exact"]);
+  });
+
+  it("keeps relics whose ducat EV meets the minimum and excludes unpriced rows", () => {
+    const rows = [
+      row({ name: "Below", ducat: 49 }),
+      row({ name: "Exact", ducat: 50 }),
+      row({ name: "Above", ducat: 75 }),
+      row({ name: "Unpriced", ducat: null }),
+    ];
+    const kept = (ducatsAtLeast: number) =>
+      names(selectRelicPlannerRows(rows, filters({ ducatsAtLeast }), ALL_PASS));
+
+    expect(kept(0)).toEqual(["Above", "Below", "Exact", "Unpriced"]);
+    expect(kept(50)).toEqual(["Above", "Exact"]);
+  });
+
   it("filters before it sorts", () => {
     const rows = [
       row({ name: "Cheap", plat: 1, vaulted: true }),
@@ -295,6 +323,23 @@ describe("pushed filter validation", () => {
     }
     for (const goldAtLeast of [-1, 100_001, "40", null, NaN, Infinity]) {
       expect(plannerFilters({ goldAtLeast }, filters({ goldAtLeast: 30 })).goldAtLeast).toBe(30);
+    }
+  });
+
+  it("accepts non-negative finite EV and ducat floors", () => {
+    for (const value of [0, 1, 37.5]) {
+      expect(plannerFilters({ platAtLeast: value, ducatsAtLeast: value })).toMatchObject({
+        platAtLeast: value,
+        ducatsAtLeast: value,
+      });
+    }
+    for (const value of [-1, "40", null, NaN, Infinity]) {
+      expect(
+        plannerFilters(
+          { platAtLeast: value, ducatsAtLeast: value },
+          filters({ platAtLeast: 25, ducatsAtLeast: 100 }),
+        ),
+      ).toMatchObject({ platAtLeast: 25, ducatsAtLeast: 100 });
     }
   });
 

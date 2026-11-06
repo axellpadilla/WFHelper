@@ -1049,6 +1049,7 @@ export function createRelicSelectionController(options: OverlayRecommendationCon
         `tierHint=${desktopTierHint || "all"} sort=${filters.sortMode}/${filters.sortDirection} ` +
         `quality=${filters.qualityMode} vaulted=${filters.vaultedMode} ` +
         `copies=${filters.ownedAbove || "any"} gold=${filters.goldAtLeast || "any"} ` +
+        `ev=${filters.platAtLeast || "any"} ducats=${filters.ducatsAtLeast || "any"} ` +
         `search=${filters.search ? "yes" : "no"} needed=${desktopNeededRewardKeys?.size ?? "off"} ` +
         `pinned=${desktopPinnedQualities?.size ?? 0}`,
     );
