@@ -610,6 +610,8 @@
   "settings.keepRunningOnClose": "Nach dem Schließen des Fensters weiterlaufen",
   "settings.updateChecks": "Automatisch nach App-Updates suchen",
   "settings.updateChecksHint": "Bei Fork-Builds ausschalten: Die mitgelieferte Update-Quelle zeigt auf das Original, daher melden Prüfungen neuere Versionen. Manuelle Prüfungen bleiben über die Statusleiste möglich.",
+  "settings.appUpdatesTitle": "App-Updates",
+  "settings.appUpdatesDesc": "Lege fest, ob WFHelper selbst nach einer neueren Version sucht.",
   "tray.show": "WFHelper anzeigen",
   "tray.quit": "Beenden",
   "settings.tabRenameLabel": "{tab} umbenennen",

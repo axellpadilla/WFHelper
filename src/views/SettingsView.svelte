@@ -754,17 +754,6 @@
                   on:change={autoSave}
                 />
               </SettingsRow>
-              <SettingsRow
-                label={$tr("settings.updateChecks")}
-                hint={$tr("settings.updateChecksHint")}
-                dataSetting="update-checks"
-              >
-                <input
-                  type="checkbox"
-                  bind:checked={form.updateChecksEnabled}
-                  on:change={autoSave}
-                />
-              </SettingsRow>
               {#if isWindows}
                 <SettingsRow
                   label={$tr("settings.warframeLifecycle")}
@@ -913,6 +902,25 @@
               <button class="btn-secondary btn-sm" on:click={openLogFolder}
                 >{$tr("settings.openLogFolder")}</button
               >
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title={$tr("settings.appUpdatesTitle")}
+            description={$tr("settings.appUpdatesDesc")}
+          >
+            <div class="mt-2.5 grid gap-1">
+              <SettingsRow
+                label={$tr("settings.updateChecks")}
+                hint={$tr("settings.updateChecksHint")}
+                dataSetting="update-checks"
+              >
+                <input
+                  type="checkbox"
+                  bind:checked={form.updateChecksEnabled}
+                  on:change={autoSave}
+                />
+              </SettingsRow>
             </div>
           </SettingsSection>
 

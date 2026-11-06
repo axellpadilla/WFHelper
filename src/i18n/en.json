@@ -1480,6 +1480,8 @@
   "settings.keepRunningOnClose": "Keep running when the window is closed",
   "settings.updateChecks": "Check for app updates automatically",
   "settings.updateChecksHint": "Turn off on fork builds: the bundled feed points at upstream, so checks report newer versions. Manual checks stay available in the status bar.",
+  "settings.appUpdatesTitle": "App updates",
+  "settings.appUpdatesDesc": "Control whether WFHelper looks for a newer release on its own.",
   "tray.show": "Show WFHelper",
   "tray.quit": "Quit",
   "settings.tabRenameLabel": "Rename {tab}",
