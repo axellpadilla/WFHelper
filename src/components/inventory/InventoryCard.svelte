@@ -20,10 +20,10 @@
   } from "../../stores/inventorySafety.js";
   import { itemMarksFor } from "../../lib/parentMastery.js";
   import { tr } from "../../lib/i18n.js";
-  import type { InventoryViewItem } from "../../lib/inventoryMarket.js";
+  import type { InventoryMarketItem } from "../../lib/inventoryMarket.js";
   import { isRankedGroup } from "../../../config/shared/numeric.js";
 
-  export let item: InventoryViewItem;
+  export let item: InventoryMarketItem;
   export let showDucats = true;
   export let canExpand = true;
   export let selectionMode = false;
@@ -31,10 +31,10 @@
   export let selectable = true;
 
   const dispatch = createEventDispatcher<{
-    select: InventoryViewItem;
-    visible: InventoryViewItem;
-    expand: InventoryViewItem;
-    toggle: { item: InventoryViewItem; shiftKey: boolean };
+    select: InventoryMarketItem;
+    visible: InventoryMarketItem;
+    expand: InventoryMarketItem;
+    toggle: { item: InventoryMarketItem; shiftKey: boolean };
   }>();
   let cardEl: HTMLDivElement | null = null;
   let visibilityObserver: IntersectionObserver | null = null;
@@ -241,6 +241,20 @@
       {showDucats}
       className="mt-1"
     />
+    {#if item.inventoryGroup === "full_sets" && item.partsPlatinum != null && item.partsPlatinum > 0}
+      <span
+        class="mt-1 inline-flex w-fit rounded border border-accent-dim bg-accent-glow px-1.5 py-0.5 text-[0.65rem] tabular-nums text-accent-bright"
+        data-full-set-arbitrage
+      >
+        {$tr("inventory.setArbitrage", {
+          parts: item.partsPlatinum.toLocaleString(),
+          delta:
+            item.setPriceDelta == null
+              ? "—"
+              : `${item.setPriceDelta > 0 ? "+" : ""}${item.setPriceDelta.toLocaleString()}`,
+        })}
+      </span>
+    {/if}
 
     {#if showRankOrderSummary}
       <div class="grid grid-cols-2 gap-1">

@@ -176,6 +176,23 @@ describe("shared filters", () => {
     expect(sorted.map((row) => row.name)).toEqual(["Item A", "Item C"]);
   });
 
+  it("sorts Full Sets by bundle delta, largest premium first by default", () => {
+    const items = [
+      { name: "Parts Are Better", setPriceDelta: -10 },
+      { name: "Bundle Premium", setPriceDelta: 15 },
+      { name: "No Price", setPriceDelta: null },
+    ];
+
+    expect(defaultSortDirection("set-delta")).toBe("desc");
+    expect(
+      applySharedFiltersAndSort(items, {
+        ...defaultFilters(),
+        sortBy: "set-delta",
+        sortDirection: defaultSortDirection("set-delta"),
+      }).map((item) => item.name),
+    ).toEqual(["Bundle Premium", "Parts Are Better", "No Price"]);
+  });
+
   it("accepts custom minimum platinum values", () => {
     const filters: SharedFiltersState = {
       ...defaultFilters(),

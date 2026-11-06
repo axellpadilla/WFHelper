@@ -109,6 +109,9 @@
     buildResetUrgency,
     COARSE_CLOCK_MS,
     FISSURE_MODE_OPTIONS,
+    filterFissureRows,
+    fissureSearchQuery,
+    fissureTierFilter,
     loadCollapsedSections,
     mountWorldView,
     setCycleAlertMinutes,
@@ -289,6 +292,14 @@
   });
 
   $: fissureFlat = buildFissureRows(wd?.fissures, $worldFissureMode, nowMs, nowCoarseMs);
+  $: filteredFissures = filterFissureRows(fissureFlat, $fissureTierFilter, $fissureSearchQuery);
+  $: fissureTierOptions = [
+    { value: "all" as const, label: $tr("common.all") },
+    ...(["Lith", "Meso", "Neo", "Axi", "Requiem", "Omnia"] as const).map((tier) => ({
+      value: tier,
+      label: tier,
+    })),
+  ];
   $: fissureModeOptions = FISSURE_MODE_OPTIONS.map((o) => ({
     value: o.value,
     label: $tr(o.labelKey),
@@ -776,21 +787,38 @@
             onToggle={() => toggleSection("fissures")}
           >
             <svelte:fragment slot="actions">
-              <SegmentedControl
-                value={$worldFissureMode}
-                options={fissureModeOptions}
-                onChange={(mode) => worldFissureMode.set(mode)}
-              />
+              <div class="flex flex-wrap items-center justify-end gap-1.5">
+                <SegmentedControl
+                  value={$worldFissureMode}
+                  options={fissureModeOptions}
+                  onChange={(mode) => worldFissureMode.set(mode)}
+                />
+                <SegmentedControl
+                  value={$fissureTierFilter}
+                  options={fissureTierOptions}
+                  onChange={(tier) => fissureTierFilter.set(tier)}
+                  wrap={true}
+                />
+                <input
+                  class="w-32 rounded-md border border-border bg-bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+                  type="search"
+                  bind:value={$fissureSearchQuery}
+                  placeholder={$tr("world.fissureSearchPlaceholder")}
+                  aria-label={$tr("world.fissureSearch")}
+                />
+              </div>
             </svelte:fragment>
             <div class="flex flex-col">
-              {#if fissureFlat.length === 0}
-                <span class="text-sm text-text-secondary opacity-70"
-                  >{$worldFissureMode === "all"
-                    ? $tr("world.noFissuresAny")
-                    : $tr("world.noActiveFissures", { mode: fissureModeLabel })}</span
-                >
+              {#if filteredFissures.length === 0}
+                <span class="text-sm text-text-secondary opacity-70">
+                  {fissureFlat.length === 0
+                    ? $worldFissureMode === "all"
+                      ? $tr("world.noFissuresAny")
+                      : $tr("world.noActiveFissures", { mode: fissureModeLabel })
+                    : $tr("world.noFissuresMatchFilters")}
+                </span>
               {:else}
-                {#each fissureFlat as f}
+                {#each filteredFissures as f}
                   <div class="fissure-row">
                     <span
                       class="inline-flex min-w-20 items-center gap-1 rounded-[var(--radius-md)] px-2 py-0.5 text-xs font-bold uppercase tracking-[0.06em]"

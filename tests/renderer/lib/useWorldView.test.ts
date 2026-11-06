@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFissureRows } from "../../../src/lib/world/useWorldView.js";
+import { buildFissureRows, filterFissureRows } from "../../../src/lib/world/useWorldView.js";
 import type { Fissure } from "../../../src/types/world.js";
 
 const NOW = Date.parse("2026-08-28T12:00:00.000Z");
@@ -73,5 +73,64 @@ describe("buildFissureRows in all mode", () => {
     ];
     expect(nodes(buildFissureRows(soon, "all", NOW, NOW))).toEqual(["Alive"]);
     expect(nodes(buildFissureRows(FISSURES, "all", NOW, NOW))).not.toContain("Meso Expired");
+  });
+
+  it("filters fissures by relic era without changing the source rows", () => {
+    const rows = buildFissureRows(
+      [
+        { tier: "Lith", node: "Lith Node", expiry: iso(10) },
+        { tier: "Omnia", node: "Omnia Node", expiry: iso(20) },
+        { tier: "Requiem", node: "Requiem Node", expiry: iso(30) },
+      ],
+      "all",
+      NOW,
+      NOW,
+    );
+
+    expect(nodes(filterFissureRows(rows, "Omnia", ""))).toEqual(["Omnia Node"]);
+    expect(nodes(filterFissureRows(rows, "all", ""))).toEqual([
+      "Lith Node",
+      "Requiem Node",
+      "Omnia Node",
+    ]);
+  });
+
+  it("searches mission, node, tier, and enemy case-insensitively", () => {
+    const rows = buildFissureRows(
+      [
+        {
+          tier: "Lith",
+          node: "Gabii",
+          missionType: "Survival",
+          enemy: "Infested",
+          expiry: iso(10),
+        },
+        { tier: "Axi", node: "Aten", missionType: "Defense", enemy: "Corpus", expiry: iso(20) },
+      ],
+      "all",
+      NOW,
+      NOW,
+    );
+
+    expect(nodes(filterFissureRows(rows, "all", "  SURVIVAL "))).toEqual(["Gabii"]);
+    expect(nodes(filterFissureRows(rows, "all", "aten"))).toEqual(["Aten"]);
+    expect(nodes(filterFissureRows(rows, "all", "lith"))).toEqual(["Gabii"]);
+    expect(nodes(filterFissureRows(rows, "all", "corpus"))).toEqual(["Aten"]);
+    expect(filterFissureRows(rows, "all", "void")).toEqual([]);
+  });
+
+  it("combines the era and text filters", () => {
+    const rows = buildFissureRows(
+      [
+        { tier: "Lith", node: "Earth", missionType: "Capture", expiry: iso(10) },
+        { tier: "Axi", node: "Earth", missionType: "Capture", expiry: iso(20) },
+      ],
+      "all",
+      NOW,
+      NOW,
+    );
+
+    expect(nodes(filterFissureRows(rows, "Axi", "earth"))).toEqual(["Earth"]);
+    expect(filterFissureRows(rows, "Lith", "axi")).toEqual([]);
   });
 });

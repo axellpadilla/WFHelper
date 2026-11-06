@@ -28,28 +28,28 @@
     showsSafetyBadge,
     verdictFor,
   } from "../../stores/inventorySafety.js";
-  import type { InventoryViewItem } from "../../lib/inventoryMarket.js";
+  import type { InventoryMarketItem } from "../../lib/inventoryMarket.js";
   import type { SharedSortKey, SortDirection } from "../../types/filters.js";
   import { isRankedGroup } from "../../../config/shared/numeric.js";
 
   interface Props {
-    items: InventoryViewItem[];
+    items: InventoryMarketItem[];
     totalCount: number | null;
-    allItems?: InventoryViewItem[] | null;
+    allItems?: InventoryMarketItem[] | null;
     showDucats: boolean;
     detailKeys: Set<string> | null;
     sortBy: SharedSortKey;
     sortDirection: SortDirection;
     sortableKeys: ReadonlySet<string>;
     onSort: (patch: { sortBy: SharedSortKey; sortDirection: SortDirection }) => void;
-    onSelect: (item: InventoryViewItem) => void;
-    onExpand: (item: InventoryViewItem) => void;
-    onVisible: (item: InventoryViewItem) => void;
+    onSelect: (item: InventoryMarketItem) => void;
+    onExpand: (item: InventoryMarketItem) => void;
+    onVisible: (item: InventoryMarketItem) => void;
     onMore: () => void;
     selectionMode?: boolean;
     selectedKeys?: ReadonlySet<string> | null;
     eligibleKeys?: ReadonlySet<string> | null;
-    onToggleSelect?: (item: InventoryViewItem, shiftKey: boolean) => void;
+    onToggleSelect?: (item: InventoryMarketItem, shiftKey: boolean) => void;
   }
 
   let {
@@ -79,7 +79,7 @@
   );
 
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  const rowItems = new Map<Element, InventoryViewItem>();
+  const rowItems = new Map<Element, InventoryMarketItem>();
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const reportedVisible = new Set<string>();
   const visibilityObserver: IntersectionObserver | null =
@@ -114,12 +114,12 @@
 
   function trackRow(
     node: HTMLElement,
-    item: InventoryViewItem,
-  ): { update: (next: InventoryViewItem) => void; destroy: () => void } {
+    item: InventoryMarketItem,
+  ): { update: (next: InventoryMarketItem) => void; destroy: () => void } {
     rowItems.set(node, item);
     if (!reportedVisible.has(item.internalName)) visibilityObserver?.observe(node);
     return {
-      update(next: InventoryViewItem): void {
+      update(next: InventoryMarketItem): void {
         rowItems.set(node, next);
       },
       destroy(): void {
@@ -156,7 +156,7 @@
     onSort(nextColumnSort({ sortBy, sortDirection }, sortKey));
   }
 
-  function openRow(item: InventoryViewItem, event?: MouseEvent | KeyboardEvent): void {
+  function openRow(item: InventoryMarketItem, event?: MouseEvent | KeyboardEvent): void {
     if (selectionMode) {
       if (isSelectable(item)) onToggleSelect(item, event?.shiftKey === true);
       return;
@@ -165,11 +165,11 @@
     else onSelect(item);
   }
 
-  function isSelectable(item: InventoryViewItem): boolean {
+  function isSelectable(item: InventoryMarketItem): boolean {
     return eligibleKeys?.has(item.internalName) ?? false;
   }
 
-  function ownedLabel(item: InventoryViewItem, code: string): string {
+  function ownedLabel(item: InventoryMarketItem, code: string): string {
     if (item.inventoryGroup === "incomplete_sets") {
       return `${item.ownedPartTypes ?? 0}/${item.totalPartTypes ?? 0}`;
     }
@@ -180,11 +180,11 @@
     return typeof value === "number" ? value.toLocaleString(code) : "-";
   }
 
-  function showsRank(item: InventoryViewItem): boolean {
+  function showsRank(item: InventoryMarketItem): boolean {
     return isRankedGroup(item.inventoryGroup) && item.maxRank > 1;
   }
 
-  function isMaxRank(item: InventoryViewItem): boolean {
+  function isMaxRank(item: InventoryMarketItem): boolean {
     return item.maxRank > 1 && item.rank >= item.maxRank;
   }
 </script>
@@ -376,6 +376,20 @@
                 : 'text-accent-bright'}"
             >
               {numberLabel(item.platinum, $locale)}
+              {#if item.inventoryGroup === "full_sets" && item.partsPlatinum != null && item.partsPlatinum > 0}
+                <span
+                  class="mt-0.5 block whitespace-nowrap text-[10px] text-accent-bright"
+                  data-full-set-arbitrage
+                >
+                  {$t("inventory.setArbitrage", {
+                    parts: item.partsPlatinum.toLocaleString($locale),
+                    delta:
+                      item.setPriceDelta == null
+                        ? "—"
+                        : `${item.setPriceDelta > 0 ? "+" : ""}${item.setPriceDelta.toLocaleString($locale)}`,
+                  })}
+                </span>
+              {/if}
             </td>
             {#if showDucats}
               <td

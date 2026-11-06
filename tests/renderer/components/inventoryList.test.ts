@@ -64,6 +64,8 @@ function row(name: string, extra: Partial<InventoryViewItem> = {}): InventoryVie
     marketThumb: null,
     subtype: null,
     platinum: null,
+    partsPlatinum: null,
+    setPriceDelta: null,
     platinumR0: null,
     platinumRmax: null,
     wtsR0: null,
