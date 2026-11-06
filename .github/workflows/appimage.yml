@@ -87,16 +87,20 @@ jobs:
             exit 1
           fi
           # Commit-stamped copy for the artifact history, plus a stable filename
-          # so the rolling release keeps one permanent download URL.
-          cp "$SOURCE" "release/WFHelper-$VERSION-$SHA.AppImage"
-          cp "$SOURCE" "release/WFHelper-linux-x86_64.AppImage"
+          # so the rolling release keeps one permanent download URL. The
+          # electron-builder original is removed so nothing is uploaded twice.
+          mv "$SOURCE" "release/WFHelper-$VERSION-$SHA.AppImage"
+          cp "release/WFHelper-$VERSION-$SHA.AppImage" "release/WFHelper-linux-x86_64.AppImage"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
           name: WFHelper-${{ steps.package.outputs.version }}-linux-x86_64
-          path: release/WFHelper-*.AppImage
+          path: |
+            release/WFHelper-${{ steps.package.outputs.version }}-${{ steps.package.outputs.sha }}.AppImage
+            release/WFHelper-linux-x86_64.AppImage
           if-no-files-found: error
           retention-days: 30
 
@@ -118,5 +122,7 @@ jobs:
           fi
           # AppImage only: latest-linux.yml belongs to versioned releases so an
           # installed build never auto-updates to a moving development artifact.
-          gh release upload "$TAG" release/WFHelper-*.AppImage \
+          gh release upload "$TAG" \
+            "release/WFHelper-${{ steps.package.outputs.version }}-${{ steps.package.outputs.sha }}.AppImage" \
+            release/WFHelper-linux-x86_64.AppImage \
             --clobber --repo "$GITHUB_REPOSITORY"
