@@ -24,7 +24,7 @@ import {
   priceRetryKey,
   itemPriceRank,
   orderRetryKey,
-  hasResolvedPrice,
+  isPriceSettled,
   hasRankPairCoverage,
 } from "./hydrationHelpers.js";
 import { getCachedMedian, getCachedRankOrderSummary } from "./hydrationCacheHelpers.js";
@@ -118,13 +118,7 @@ export async function hydrateItemMetrics(
   const iconReady = !needsIcon || lookupHasIcon || existing?.hasMeta === true;
   const rankPairCovered = hasRankPairCoverage(existing, item, needs);
 
-  // no-network passes stamp hasPrice without a value - let a network pass redo
-  // those (real no-listing answers sit behind the retry cooldown)
-  const hasPriceValue =
-    finiteMetricNumber(existing?.platinum) != null ||
-    finiteMetricNumber(existing?.platinumR0) != null ||
-    finiteMetricNumber(existing?.platinumRmax) != null;
-  const priceResolved = hasResolvedPrice(existing) && (needs.network !== true || hasPriceValue);
+  const priceResolved = isPriceSettled(existing, needs.network === true);
 
   if (
     existing &&

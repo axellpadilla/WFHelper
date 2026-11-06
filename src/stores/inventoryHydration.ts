@@ -17,7 +17,7 @@ import {
   priceRetryKey,
   itemPriceRank,
   orderRetryKey,
-  hasResolvedPrice,
+  isPriceSettled,
   hasRankPairCoverage,
 } from "./hydration/hydrationHelpers.js";
 import {
@@ -241,7 +241,8 @@ export function createInventoryHydrationController(): InventoryHydrationControll
 
       if (
         existing &&
-        (!needs.price || (!rankMismatch && hasResolvedPrice(existing) && rankPairCovered)) &&
+        (!needs.price ||
+          (!rankMismatch && isPriceSettled(existing, allowNetworkFetch) && rankPairCovered)) &&
         (!needs.ducats || existing.hasDucats) &&
         (!needsIcon || iconReady) &&
         !retryMissingDucats &&

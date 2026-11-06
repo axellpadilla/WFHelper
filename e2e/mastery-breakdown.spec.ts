@@ -31,9 +31,9 @@ const mastery: MasteryData = {
     },
     completion: {
       starChart: {
-        normal: { done: 123, total: 250 },
+        normal: { done: 123, total: 238 },
         junctions: { done: 13, total: 13 },
-        steelPath: { done: 12, total: 250 },
+        steelPath: { done: 12, total: 238 },
         steelPathJunctions: { done: 1, total: 13 },
       },
       intrinsics: { railjack: { done: 30, total: 50 }, drifter: { done: 20, total: 40 } },

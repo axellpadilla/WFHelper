@@ -147,4 +147,41 @@ describe("createInventoryHydrationController", () => {
 
     unsubscribe();
   });
+
+  it("re-queues a row for a network pass after a no-network pass stamped it without a price", async () => {
+    const { createInventoryHydrationController } =
+      await import("../../../src/stores/inventoryHydration.js");
+    const { HYDRATION_TICK_MS, METRIC_FLUSH_MS } =
+      await import("../../../src/stores/hydration/hydrationTypes.js");
+    const passes: Array<boolean | undefined> = [];
+
+    hydrateItemMetricsMock.mockImplementation(
+      async (ctx: HydrationContext, item: InventoryBaseItem, _lookup, needs: MetricNeeds) => {
+        passes.push(needs.network);
+        // What the real no-network pass does for a row the snapshot did not price.
+        ctx.queueMetricPatch(item.internalName, {
+          platinum: null,
+          ducats: null,
+          slug: item.marketSlug,
+          thumb: null,
+          icon: null,
+          hasPrice: true,
+          hasDucats: true,
+          hasMeta: true,
+        });
+        await Promise.resolve();
+      },
+    );
+
+    const controller = createInventoryHydrationController();
+    const item = makeItem(1);
+    controller.enqueue([item], {}, { price: true, ducats: false, orders: false, network: false });
+    await vi.advanceTimersByTimeAsync(HYDRATION_TICK_MS + METRIC_FLUSH_MS);
+
+    // The card scrolls into view: this pass may fetch, so it must not be skipped.
+    controller.enqueue([item], {}, { price: true, ducats: false, orders: false, network: true });
+    await vi.advanceTimersByTimeAsync(HYDRATION_TICK_MS);
+
+    expect(passes).toEqual([false, true]);
+  });
 });

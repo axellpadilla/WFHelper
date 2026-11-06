@@ -357,10 +357,42 @@ interface ProfileMasteryInfo {
   testReady: boolean;
 }
 
+// Star chart completion counts the 238 nodes (plus 13 Junctions) Teshin checks
+// before unlocking The Steel Path, matching the in-game profile before post-New
+// War content. Void, Lua, Kuva Fortress, Deimos and Dark Sector nodes grant no
+// mastery, so masteryExp cannot pick them.
+const MISSION_NODE_TYPE = 0;
+const DARK_SECTOR_NODE_TYPE = 4;
+// Mercury to Kuva Fortress. Sanctuary, Veil Proxima, Zariman, Duviri, Hollvania,
+// the Dark Refractory and any later star chart sit at 19 and up. 13 is the dojo.
+const LAST_ORIGIN_SYSTEM_INDEX = 18;
+const CLAN_DOJO_SYSTEM_INDEX = 13;
+// Albrecht's Laboratories nodes come after The New War.
+const POST_NEW_WAR_QUEST_KEYS = new Set(["/Lotus/Types/Keys/EntratiLab/EntratiQuestKeyChain"]);
+const NOT_STEEL_PATH_REQUIRED = new Set([
+  "SolNode701", // Jordas Golem Assassinate
+  "SolNode705", // Mutalist Alad V Assassinate
+  "NokkoColony", // Deepmines, after The New War; DE removed it from the unlock
+]);
+
+function isStarChartNode(tag: string, node: Record<string, unknown>): boolean {
+  const nodeType = toFiniteNumber(node.nodeType);
+  if (nodeType !== MISSION_NODE_TYPE && nodeType !== DARK_SECTOR_NODE_TYPE) return false;
+  const systemIndex = toFiniteNumber(node.systemIndex);
+  if (systemIndex == null || systemIndex > LAST_ORIGIN_SYSTEM_INDEX) return false;
+  if (systemIndex === CLAN_DOJO_SYSTEM_INDEX) return false;
+  if (node.hidden === true || node.missionType === "MT_RAILJACK") return false;
+  if (typeof node.questReq === "string" && POST_NEW_WAR_QUEST_KEYS.has(node.questReq)) {
+    return false;
+  }
+  return !NOT_STEEL_PATH_REQUIRED.has(tag);
+}
+
 // Node tag -> mastery grant. ExportRegions carries masteryExp per node; junctions
 // export 0 there but award a flat 1000 in game. Loaded once, empty on failure.
 let _regionMastery: Record<string, number> | null = null;
 const _regionIsJunction: Record<string, boolean> = {};
+const _starChartNodes = new Set<string>();
 function getRegionMastery(): Record<string, number> {
   if (_regionMastery) return _regionMastery;
   _regionMastery = {};
@@ -379,6 +411,7 @@ function getRegionMastery(): Record<string, number> {
     const junction = node.missionType === "MT_JUNCTION";
     _regionIsJunction[tag] = junction;
     _regionMastery[tag] = junction ? JUNCTION_MASTERY_XP : (toFiniteNumber(node.masteryExp) ?? 0);
+    if (!junction && isStarChartNode(tag, node)) _starChartNodes.add(tag);
   }
   return _regionMastery;
 }
@@ -419,14 +452,11 @@ interface AccountCompletionStats {
 /** Star chart + intrinsic completion. Display only; totals from ExportRegions. */
 function computeAccountCompletion(inventoryData: Record<string, unknown>): AccountCompletionStats {
   const regions = getRegionMastery();
+  const counted = (tag: string): boolean =>
+    _regionIsJunction[tag] === true || _starChartNodes.has(tag);
 
-  let normalTotal = 0;
-  let junctionTotal = 0;
-  for (const [tag, xp] of Object.entries(regions)) {
-    if (xp <= 0) continue;
-    if (_regionIsJunction[tag]) junctionTotal++;
-    else normalTotal++;
-  }
+  const normalTotal = _starChartNodes.size;
+  const junctionTotal = Object.keys(regions).filter((tag) => _regionIsJunction[tag]).length;
 
   let normalDone = 0;
   let junctionDone = 0;
@@ -435,7 +465,7 @@ function computeAccountCompletion(inventoryData: Record<string, unknown>): Accou
   const missions = Array.isArray(inventoryData?.Missions) ? inventoryData.Missions : [];
   for (const entry of missions as Array<Record<string, unknown>>) {
     const tag = typeof entry.Tag === "string" ? entry.Tag : null;
-    if (!tag || !(tag in regions) || regions[tag] <= 0) continue;
+    if (!tag || !counted(tag)) continue;
     const completes = toFiniteNumber(entry.Completes) ?? 0;
     const steel = (toFiniteNumber(entry.Tier) ?? 0) >= 1;
     if (completes <= 0 && !steel) continue;
