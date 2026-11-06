@@ -96,10 +96,17 @@ async function post(webhookUrl, message) {
 async function main() {
   const env = process.env;
   if (!env.DISCORD_WEBHOOK_URL) {
-    console.error(
-      "::error::DISCORD_WEBHOOK_URL secret is missing/empty - Discord announcement NOT sent.",
-    );
-    process.exit(1);
+    // A fork or an unconfigured deployment has nothing to announce, which is not
+    // a failed build. The dry run exists only to prove the secret is wired, so
+    // it still reports the missing secret.
+    if (env.DRY_RUN === "true") {
+      console.error(
+        "::error::DISCORD_WEBHOOK_URL secret is missing/empty - Discord announcement NOT sent.",
+      );
+      process.exit(1);
+    }
+    console.log("DISCORD_WEBHOOK_URL is not configured; skipping the announcement.");
+    return;
   }
   const messages = buildMessages({
     title: env.TITLE,

@@ -58,6 +58,13 @@ jobs:
     # Normally ~3 min; a stalled runner should go red, not sit for 6 hours.
     timeout-minutes: 20
 
+    # Optional on a fork: unset values keep the renderer's built-in backend, and
+    # the validation step below only runs when a backend URL is configured.
+    env:
+      VITE_WFM_BACKEND_URL: ${{ secrets.VITE_WFM_BACKEND_URL }}
+      VITE_WFM_BACKEND_DIRECT_FALLBACK: ${{ vars.VITE_WFM_BACKEND_DIRECT_FALLBACK }}
+      VITE_WFM_BACKEND_BOOTSTRAP_ENABLED: ${{ vars.VITE_WFM_BACKEND_BOOTSTRAP_ENABLED }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -102,12 +109,9 @@ jobs:
             Write-Warning "CSC_LINK/CSC_KEY_PASSWORD are not configured; building an unsigned Windows installer."
           }
 
+      # node directly: the script has no deps, keep pnpm's run lifecycle out of it
       - name: Validate release runtime configuration
-        env:
-          VITE_WFM_BACKEND_URL: ${{ secrets.VITE_WFM_BACKEND_URL }}
-          VITE_WFM_BACKEND_DIRECT_FALLBACK: ${{ vars.VITE_WFM_BACKEND_DIRECT_FALLBACK }}
-          VITE_WFM_BACKEND_BOOTSTRAP_ENABLED: ${{ vars.VITE_WFM_BACKEND_BOOTSTRAP_ENABLED }}
-        # node directly: the script has no deps, keep pnpm's run lifecycle out of it
+        if: env.VITE_WFM_BACKEND_URL != ''
         run: node scripts/validate-release-env.mjs
 
       - name: Ensure release exists
@@ -137,11 +141,6 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          # baked into the renderer bundle; without these a CI installer
-          # bypasses the worker backend
-          VITE_WFM_BACKEND_URL: ${{ secrets.VITE_WFM_BACKEND_URL }}
-          VITE_WFM_BACKEND_DIRECT_FALLBACK: ${{ vars.VITE_WFM_BACKEND_DIRECT_FALLBACK }}
-          VITE_WFM_BACKEND_BOOTSTRAP_ENABLED: ${{ vars.VITE_WFM_BACKEND_BOOTSTRAP_ENABLED }}
 
       - name: Verify packaged Windows runtime
         run: pnpm run test:packaged release/win-unpacked/WFHelper.exe
@@ -180,12 +179,18 @@ jobs:
           gh release upload "$env:GITHUB_REF_NAME" $paths --clobber --repo "$env:GITHUB_REPOSITORY"
 
   # Linux AppImage into the same draft release (latest-linux.yml enables
-  # electron-updater on linux). Runs after release-windows so the draft
-  # already exists - no create race.
+  # electron-updater on linux). Independent of release-windows so a fork without
+  # Windows signing secrets still ships Linux builds; the draft creation below is
+  # idempotent and tolerates either job finishing first.
   release-linux:
-    needs: [require-green-ci, release-windows]
+    needs: require-green-ci
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    env:
+      VITE_WFM_BACKEND_URL: ${{ secrets.VITE_WFM_BACKEND_URL }}
+      VITE_WFM_BACKEND_DIRECT_FALLBACK: ${{ vars.VITE_WFM_BACKEND_DIRECT_FALLBACK }}
+      VITE_WFM_BACKEND_BOOTSTRAP_ENABLED: ${{ vars.VITE_WFM_BACKEND_BOOTSTRAP_ENABLED }}
 
     steps:
       - name: Checkout
@@ -210,13 +215,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # node directly: the script has no deps, keep pnpm's run lifecycle out of it
       - name: Validate release runtime configuration
-        env:
-          VITE_WFM_BACKEND_URL: ${{ secrets.VITE_WFM_BACKEND_URL }}
-          VITE_WFM_BACKEND_DIRECT_FALLBACK: ${{ vars.VITE_WFM_BACKEND_DIRECT_FALLBACK }}
-          VITE_WFM_BACKEND_BOOTSTRAP_ENABLED: ${{ vars.VITE_WFM_BACKEND_BOOTSTRAP_ENABLED }}
-        # node directly: the script has no deps, keep pnpm's run lifecycle out of it
+        if: env.VITE_WFM_BACKEND_URL != ''
         run: node scripts/validate-release-env.mjs
+
+      # release-linux no longer waits for release-windows, so whichever job runs
+      # first creates the draft. `gh release view` makes this idempotent.
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists"
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" --draft --generate-notes
+            echo "Created draft release $GITHUB_REF_NAME"
+          fi
 
       # wayland-scanner and the protocol XML are build-time only; without them
       # build-layer-shell skips and the AppImage ships with the addon missing.
@@ -231,12 +247,6 @@ jobs:
           pnpm run build
           node scripts/build-layer-shell.mjs --require
           pnpm exec electron-builder --linux AppImage --publish never
-        env:
-          # baked into the renderer bundle; without these a CI installer
-          # bypasses the worker backend
-          VITE_WFM_BACKEND_URL: ${{ secrets.VITE_WFM_BACKEND_URL }}
-          VITE_WFM_BACKEND_DIRECT_FALLBACK: ${{ vars.VITE_WFM_BACKEND_DIRECT_FALLBACK }}
-          VITE_WFM_BACKEND_BOOTSTRAP_ENABLED: ${{ vars.VITE_WFM_BACKEND_BOOTSTRAP_ENABLED }}
 
       - name: Verify packaged Linux runtime
         run: |
