@@ -2271,6 +2271,7 @@
   "analysis.exportFailed": "导出失败：{error}",
   "analysis.exportUnavailable": "导出功能不可用。",
   "syndicates.hint": "选择目标等级，查看还需要多少声望、现金和材料。",
+  "syndicates.missingOnly": "仅显示缺失项",
   "syndicates.noData": "加载库存文件以查看你的集团等级。",
   "syndicates.clearGoals": "清除所有目标",
   "syndicates.groupNormal": "结盟集团",

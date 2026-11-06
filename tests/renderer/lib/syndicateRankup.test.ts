@@ -6,6 +6,7 @@ import {
   aggregateNeeds,
   alignmentConflicts,
   dailyStandingCap,
+  filterMissingRequirements,
   planSteps,
   syndicateStatus,
   type SyndicateGoalPlan,
@@ -330,6 +331,19 @@ describe("aggregateNeeds", () => {
     expect(needs.items).toEqual([]);
     expect(needs.standing).toEqual([]);
     expect(needs.credits.needed).toBe(0);
+  });
+});
+
+describe("filterMissingRequirements", () => {
+  it("keeps only item or credit requirements where owned is below needed", () => {
+    const requirements = [
+      { key: "missing", needed: 5, owned: 3 },
+      { key: "covered", needed: 2, owned: 2 },
+      { key: "overowned", needed: 1, owned: 4 },
+    ];
+
+    expect(filterMissingRequirements(requirements)).toEqual([requirements[0]]);
+    expect(filterMissingRequirements([{ needed: 100, owned: 120 }])).toEqual([]);
   });
 });
 

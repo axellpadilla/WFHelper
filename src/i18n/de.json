@@ -2270,6 +2270,7 @@
   "analysis.exportFailed": "Export fehlgeschlagen: {error}",
   "analysis.exportUnavailable": "Der Export ist nicht verfügbar.",
   "syndicates.hint": "Wähle einen Zielrang, um zu sehen, was er noch an Ansehen, Credits und Materialien kostet.",
+  "syndicates.missingOnly": "Nur Fehlendes",
   "syndicates.noData": "Lade eine Inventardatei, um deine Syndikatsränge zu sehen.",
   "syndicates.clearGoals": "Alle Ziele löschen",
   "syndicates.groupNormal": "Verbündete Syndikate",
