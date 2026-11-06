@@ -410,6 +410,7 @@ export const FILTER_CONTROL_SUPPORT: Record<FilterScope, readonly FilterControlI
   inventory: [
     "search",
     "sort",
+    "mastery",
     "orderPlaced",
     "mastered",
     "spares",

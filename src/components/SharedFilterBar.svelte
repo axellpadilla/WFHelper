@@ -133,6 +133,7 @@
     ...(fullBasic && showFoundryState ? (["foundryState"] as FilterControlId[]) : []),
     ...(fullBasic && showVaulted ? (["vaulted"] as FilterControlId[]) : []),
     ...(fullBasic && showSubsumed ? (["subsumed"] as FilterControlId[]) : []),
+    ...(isInventoryScope && showAdvanced ? (["mastery"] as FilterControlId[]) : []),
     ...(isInventoryScope && showAdvanced ? ADVANCED_CONTROLS : []),
   ]);
   // Basic before advanced whatever the stored order says: the two are separate rows
