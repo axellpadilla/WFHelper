@@ -23,6 +23,7 @@ export type SharedSortKey =
   | "count"
   | "time"
   | "disposition"
+  | "endo"
   | "rerolls"
   | "grade"
   | "attr_grade"
