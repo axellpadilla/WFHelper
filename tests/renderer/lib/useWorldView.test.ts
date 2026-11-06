@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFissureRows,
+  filterActiveInvasions,
   filterFissureRows,
+  filterUnownedCircuitChoices,
   formatWorldAge,
 } from "../../../src/lib/world/useWorldView.js";
-import type { Fissure } from "../../../src/types/world.js";
+import type { Fissure, Invasion } from "../../../src/types/world.js";
 
 const NOW = Date.parse("2026-08-28T12:00:00.000Z");
 const iso = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
@@ -40,6 +42,67 @@ describe("formatWorldAge", () => {
     expect(formatWorldAge(NOW - 5 * 60_000, NOW, translate)).toBe("common.updatedMAgo:5");
     expect(formatWorldAge(NOW - 3 * 3_600_000, NOW, translate)).toBe("common.updatedHAgo:3");
     expect(formatWorldAge(NOW - 2 * 86_400_000, NOW, translate)).toBe("common.updatedDAgo:2");
+  });
+});
+
+describe("world maintenance filters", () => {
+  it("filters Circuit choices to unowned items without changing the source", () => {
+    const choices = [
+      { name: "Owned", owned: true },
+      { name: "Missing", owned: false },
+    ];
+
+    expect(filterUnownedCircuitChoices(choices, true)).toEqual([{ name: "Missing", owned: false }]);
+    expect(filterUnownedCircuitChoices(choices, false)).toEqual(choices);
+    expect(choices).toHaveLength(2);
+  });
+
+  it("searches active invasion rewards, node, and factions case-insensitively", () => {
+    const invasions: Invasion[] = [
+      {
+        id: "one",
+        node: "Ceres - Draco",
+        attacker: {
+          faction: "Grineer",
+          reward: {
+            items: [],
+            countedItems: [{ count: 5, type: "Orokin Catalyst Blueprint" }],
+            credits: 0,
+          },
+        },
+        defender: {
+          faction: "Corpus",
+          reward: {
+            items: ["Forma"],
+            countedItems: [],
+            credits: 0,
+          },
+        },
+        vsInfestation: false,
+        completion: 25,
+        completed: false,
+      },
+      {
+        id: "two",
+        node: "Eris - Akkad",
+        attacker: { faction: "Infested" },
+        defender: {
+          faction: "Corpus",
+          reward: { items: [], countedItems: [], credits: 250_000 },
+        },
+        vsInfestation: true,
+        completion: 75,
+        completed: false,
+      },
+    ];
+
+    const idsFor = (query: string) => filterActiveInvasions(invasions, query).map((inv) => inv.id);
+    expect(idsFor("  DRACO ")).toEqual(["one"]);
+    expect(idsFor("catalyst")).toEqual(["one"]);
+    expect(idsFor("infested")).toEqual(["two"]);
+    expect(idsFor("250000")).toEqual(["two"]);
+    expect(filterActiveInvasions(invasions, "")).toEqual(invasions);
+    expect(idsFor("unmatched")).toEqual([]);
   });
 });
 

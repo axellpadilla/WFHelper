@@ -113,6 +113,9 @@
     formatWorldAge,
     fissureSearchQuery,
     fissureTierFilter,
+    filterActiveInvasions,
+    filterUnownedCircuitChoices,
+    invasionSearchQuery,
     loadCollapsedSections,
     mountWorldView,
     refreshWorldData,
@@ -254,6 +257,7 @@
   $: incarnonLookup = incarnonByName(buildIncarnonWeapons($itemDb, $inventoryData, duviriHard));
 
   let circuitFullView = false;
+  let circuitUnownedOnly = false;
   $: circuitNormalIdx = circuitRotationIndex(CIRCUIT_NORMAL_ROTATION, duviriNormal);
   $: circuitHardIdx = circuitRotationIndex(CIRCUIT_HARD_ROTATION, duviriHard);
   $: circuitCanExpand = circuitNormalIdx >= 0 || circuitHardIdx >= 0;
@@ -323,7 +327,8 @@
     t: $tr,
   });
 
-  $: invasions = ((wd?.invasions || []) as Invasion[]).filter((inv) => !inv.completed);
+  $: activeInvasions = ((wd?.invasions || []) as Invasion[]).filter((inv) => !inv.completed);
+  $: invasions = filterActiveInvasions(activeInvasions, $invasionSearchQuery);
 
   $: bountyRotation = (wd?.bountyRotation as string | undefined) || undefined;
 
@@ -382,7 +387,7 @@
     ...(steelPathHonors ? ["world.steelPath"] : []),
     "world.fissures",
     "world.fissureAlerts",
-    ...(invasions.length > 0 ? ["world.invasions"] : []),
+    ...(activeInvasions.length > 0 ? ["world.invasions"] : []),
     ...(darvoDeals.length > 0 ? ["world.darvo"] : []),
     "world.vendors",
     ...(baroPresent ? ["world.baro"] : []),
@@ -626,6 +631,14 @@
             onToggle={() => toggleSection("circuit")}
           >
             <svelte:fragment slot="actions">
+              <button
+                class="btn-secondary btn-sm"
+                aria-pressed={circuitUnownedOnly}
+                data-circuit-unowned-only
+                on:click={() => (circuitUnownedOnly = !circuitUnownedOnly)}
+              >
+                {$tr("baro.unownedOnly")}
+              </button>
               {#if circuitCanExpand && !collapsed.circuit}
                 <button
                   class="btn-secondary btn-sm"
@@ -636,6 +649,7 @@
               {/if}
             </svelte:fragment>
             {#each [{ label: $tr("world.normalRotation"), items: circuitNormalItems, weeks: circuitNormalFull, isSteelPath: false }, { label: $tr("world.steelPathRotation"), items: circuitHardItems, weeks: circuitHardFull, isSteelPath: true }] as rot}
+              {@const currentItems = filterUnownedCircuitChoices(rot.items, circuitUnownedOnly)}
               <div
                 class="mb-1 text-xs font-bold uppercase tracking-[0.06em] {rot.isSteelPath
                   ? 'text-warning'
@@ -646,6 +660,7 @@
               {#if circuitFullView && rot.weeks.length > 0}
                 <div class="-mx-1.5 -mt-1 mb-1 flex gap-2.5 overflow-x-auto p-2">
                   {#each rot.weeks as week}
+                    {@const weekItems = filterUnownedCircuitChoices(week.items, circuitUnownedOnly)}
                     <div
                       class="flex shrink-0 flex-col gap-1.5 rounded-[var(--radius-md)] border p-2 {week.current
                         ? 'border-warning/60 bg-warning/5'
@@ -657,19 +672,28 @@
                           : 'text-text-muted'}">{week.label}</span
                       >
                       <div class="flex gap-2">
-                        {#each week.items as item}
-                          {@render circuitCard(item, rot.isSteelPath)}
-                        {/each}
+                        {#if weekItems.length > 0}
+                          {#each weekItems as item}
+                            {@render circuitCard(item, rot.isSteelPath)}
+                          {/each}
+                        {:else if circuitUnownedOnly && week.items.length > 0}
+                          <span class="text-xs text-text-muted"
+                            >{$tr("world.allCircuitChoicesOwned")}</span
+                          >
+                        {/if}
                       </div>
                     </div>
                   {/each}
                 </div>
               {:else}
                 <div class="-mx-1.5 -mt-1 mb-1 flex gap-2 overflow-x-auto p-2">
-                  {#each rot.items as item}
+                  {#each currentItems as item}
                     {@render circuitCard(item, rot.isSteelPath)}
                   {:else}
-                    <span class="text-sm text-text-secondary opacity-70">{$tr("world.noData")}</span
+                    <span class="text-sm text-text-secondary opacity-70"
+                      >{circuitUnownedOnly && rot.items.length > 0
+                        ? $tr("world.allCircuitChoicesOwned")
+                        : $tr("world.noData")}</span
                     >
                   {/each}
                 </div>
@@ -877,18 +901,34 @@
           <FissureAlerts />
         </div>
       {:else if sectionId === "world.invasions"}
-        {#if invasions.length > 0}
+        {#if activeInvasions.length > 0}
           <div class="world-section">
             <CollapsibleSection
               title={$tr("world.invasions")}
               collapsed={collapsed.invasions}
               onToggle={() => toggleSection("invasions")}
             >
-              <div class="flex flex-col">
-                {#each invasions as inv}
-                  <InvasionItem {inv} />
-                {/each}
-              </div>
+              <svelte:fragment slot="actions">
+                <input
+                  class="w-36 rounded-md border border-border bg-bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+                  type="search"
+                  bind:value={$invasionSearchQuery}
+                  placeholder={$tr("world.invasionSearchPlaceholder")}
+                  aria-label={$tr("world.invasionSearch")}
+                  data-invasion-search
+                />
+              </svelte:fragment>
+              {#if invasions.length === 0}
+                <span class="text-sm text-text-secondary opacity-70"
+                  >{$tr("world.noInvasionsMatchFilters")}</span
+                >
+              {:else}
+                <div class="flex flex-col">
+                  {#each invasions as inv}
+                    <InvasionItem {inv} />
+                  {/each}
+                </div>
+              {/if}
             </CollapsibleSection>
           </div>
         {/if}

@@ -12,6 +12,7 @@ import {
   missionStatusText,
   missionTypeLabel,
   rewardRowTotals,
+  sortMissionSummaries,
   type PageLoadMode,
   type RewardRowSources,
 } from "../../../src/lib/missionRewardRows.js";
@@ -52,6 +53,36 @@ function sources(prices: Record<string, number>): RewardRowSources {
 }
 
 describe("mission reward rows", () => {
+  it("sorts loaded mission summaries by newest, platinum, or reward count", () => {
+    const summaries = [
+      { id: "old", endedAt: 10, platinum: 50, rewardCount: 5 },
+      { id: "valuable", endedAt: 20, platinum: 150, rewardCount: 2 },
+      { id: "many", endedAt: 15, platinum: 50, rewardCount: 12 },
+      { id: "tie", endedAt: 30, platinum: 50, rewardCount: 5 },
+    ];
+    const metrics = (summary: (typeof summaries)[number]) => summary;
+
+    expect(sortMissionSummaries(summaries, "newest", metrics).map((row) => row.id)).toEqual([
+      "tie",
+      "valuable",
+      "many",
+      "old",
+    ]);
+    expect(sortMissionSummaries(summaries, "platinum", metrics).map((row) => row.id)).toEqual([
+      "valuable",
+      "tie",
+      "many",
+      "old",
+    ]);
+    expect(sortMissionSummaries(summaries, "rewards", metrics).map((row) => row.id)).toEqual([
+      "many",
+      "tie",
+      "old",
+      "valuable",
+    ]);
+    expect(summaries.map((row) => row.id)).toEqual(["old", "valuable", "many", "tie"]);
+  });
+
   it("prices unranked rewards, sorts by value and counts what has no price", () => {
     const rows = buildRewardRows(
       [
