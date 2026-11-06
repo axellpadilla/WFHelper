@@ -119,6 +119,25 @@ describe("shared filters", () => {
     expect(matchesSharedFilters(item, { ...filters, masteredMode: "not_mastered" })).toBe(false);
   });
 
+  it("filters inventory item mastery independently from parent mastery", () => {
+    const items = [
+      { name: "Mastered item", status: "mastered", parentMastered: false },
+      { name: "Unmastered item", status: "unmastered", parentMastered: false },
+      { name: "Part of mastered set", status: "unmastered", parentMastered: true },
+    ];
+
+    expect(
+      applySharedFiltersAndSort(items, { ...defaultFilters(), masteredMode: "mastered" }).map(
+        (item) => item.name,
+      ),
+    ).toEqual(["Mastered item"]);
+    expect(
+      applySharedFiltersAndSort(items, { ...defaultFilters(), mastered: "yes" }).map(
+        (item) => item.name,
+      ),
+    ).toEqual(["Part of mastered set"]);
+  });
+
   it("drops items without a subsumed flag when the subsumed filter is active", () => {
     const base = { name: "Nyx", subsumed: false };
     const done = { name: "Rhino", subsumed: true };
@@ -416,6 +435,7 @@ describe("filter control registry", () => {
       }
     }
     expect(FILTER_CONTROL_SUPPORT.inventory).toContain("minDucats");
+    expect(FILTER_CONTROL_SUPPORT.inventory).toContain("mastery");
   });
 });
 
