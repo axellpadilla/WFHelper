@@ -201,6 +201,29 @@ describe("WFM backend fallback integration", () => {
     );
   });
 
+  it.each([401, 403, 408])("treats a direct price API %s response as transient", async (status) => {
+    const slug = `blocked_price_${status}`;
+    const fetchMock = vi.fn(async (input: Request | URL | string) => {
+      const url = toUrl(input);
+      if (url === `${BACKEND_URL}/v1/prices/${slug}`) {
+        return new Response("", { status: 503 });
+      }
+      if (url === `https://api.warframe.market/v1/items/${slug}/statistics`) {
+        return new Response("", { status });
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { fetchPriceBySlug } = await import("../../../../src/lib/wfm/wfmPrice.js");
+    await expect(fetchPriceBySlug(slug, { priority: "normal" })).resolves.toMatchObject({
+      status: "transient",
+      slug,
+      median: null,
+    });
+  });
+
   it("releases the price queue after a direct fallback timeout", async () => {
     vi.useFakeTimers();
     let directCalls = 0;
