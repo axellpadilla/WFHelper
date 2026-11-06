@@ -435,6 +435,18 @@ describe("overlay settings controller", () => {
     ).toBe(false);
   });
 
+  it("keeps automatic update checks on unless switched off", () => {
+    const { controller } = buildController();
+
+    expect(controller.normalizeOverlaySettings({}).updateChecksEnabled).toBe(true);
+    expect(
+      controller.normalizeOverlaySettings({ updateChecksEnabled: false }).updateChecksEnabled,
+    ).toBe(false);
+    expect(controller.setOverlaySettings({ keepRunningOnClose: true }).updateChecksEnabled).toBe(
+      true,
+    );
+  });
+
   it("migrates the legacy trade notification setting to the overlay toggle", () => {
     const { controller } = buildController();
 

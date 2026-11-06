@@ -33,6 +33,7 @@ import * as missionRewards from "../services/missionRewards";
 import * as wfmPresence from "../services/wfmPresence";
 import * as inventorySync from "../services/inventorySync";
 import { setOcrDebugDumpsEnabled } from "../services/rewardScanDebug";
+import * as autoUpdater from "../services/autoUpdater";
 import { applyMainWindowZoom } from "./mainWindowZoom";
 import {
   isArbiSummaryOverlayEnabled,
@@ -486,6 +487,7 @@ function register(): void {
       if (settings.keepRunningOnClose === true) createTray();
       else destroyTray();
       setOcrDebugDumpsEnabled(settings.ocrDebugImagesEnabled !== false);
+      autoUpdater.setUpdateChecksEnabled(settings.updateChecksEnabled !== false);
       inventorySync.apply("settings");
       wfmPresence.setOptions({
         autoIngameEnabled: settings.wfmAutoIngameEnabled === true,

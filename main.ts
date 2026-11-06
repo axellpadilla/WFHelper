@@ -511,6 +511,7 @@ function reportSessionHealth(profileStage: ProfileStage): void {
 function initTrackersAndSettings(profileStage: ProfileStage): void {
   const settingsStart = Date.now();
   overlayIpc.loadOverlaySettings();
+  autoUpdater.setUpdateChecksEnabled(ctx.overlaySettings.updateChecksEnabled !== false);
   profileStage("overlay-settings:load", settingsStart);
   startWarframeLifecycle(() => app.quit());
   void configureWarframeLifecycle(ctx.overlaySettings.warframeLifecycleEnabled === true).catch(
