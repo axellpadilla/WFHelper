@@ -263,11 +263,13 @@ describe("mastery planner ownership rules", () => {
     });
     expect(held.craftableNow).toBe(false);
     expect(held.completeness).toBe(0);
+    expect(held.missingParts).toBe(1);
 
     const built = planFor(new Map([[chassis, 1]]));
     expect(built.components[0]).toMatchObject({ owned: 1, built: 1, state: "owned" });
     expect(built.craftableNow).toBe(true);
     expect(built.completeness).toBe(1);
+    expect(built.missingParts).toBe(0);
 
     expect(planFor(new Map()).components[0]).toMatchObject({
       owned: 0,
@@ -400,6 +402,7 @@ describe("mastery planner recipe walking", () => {
     expect(totalFor(plan, FERRITE).needed).toBe(900);
     expect(totalFor(plan, PLASTIDS).needed).toBe(220);
     expect(plan.totalCredits).toBe(40_000);
+    expect(plan.items[0].missingParts).toBe(1);
     expect(plan.totals.some((row) => row.uniqueName === chassis)).toBe(false);
     expect(plan.items[0].components[0].uniqueName).toBe(chassis);
   });
@@ -675,6 +678,7 @@ describe("mastery planner sorting", () => {
       resources: [],
       credits: 0,
       completeness: 0,
+      missingParts: 0,
       craftableNow: false,
       ...overrides,
     };
@@ -719,6 +723,22 @@ describe("mastery planner sorting", () => {
       "Alpha",
       "Beta",
       "Gamma",
+    ]);
+  });
+
+  it("orders by fewest missing parts without moving craftable items out of their group", () => {
+    const items = [
+      plannedItem({ name: "More", missingParts: 3 }),
+      plannedItem({ name: "Ready", missingParts: 8, craftableNow: true }),
+      plannedItem({ name: "Less", missingParts: 1 }),
+      plannedItem({ name: "None", missingParts: 0 }),
+    ];
+
+    expect(sortPlannedItems(items, "missing_parts", label).map((item) => item.name)).toEqual([
+      "Ready",
+      "None",
+      "Less",
+      "More",
     ]);
   });
 

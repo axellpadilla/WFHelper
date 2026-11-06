@@ -88,7 +88,11 @@ function balance(inventory: RawInventoryData | null, id: "ducats" | "credits"): 
   return row ? amount(row.ItemCount) : 0;
 }
 
-export function baroBudget(rows: BaroCatalogRow[], inventory: RawInventoryData | null) {
+export function baroBudget(
+  rows: BaroCatalogRow[],
+  inventory: RawInventoryData | null,
+  options?: { excludeOwned?: boolean },
+) {
   const ducats = balance(inventory, "ducats");
   const credits = balance(inventory, "credits");
   let totalDucats = 0;
@@ -98,7 +102,8 @@ export function baroBudget(rows: BaroCatalogRow[], inventory: RawInventoryData |
   let unknownDucats = false;
   let unknownCredits = false;
   for (const row of rows) {
-    const count = quantity(row.quantity);
+    const wished = quantity(row.quantity);
+    const count = Math.max(0, wished - (options?.excludeOwned && row.owned ? 1 : 0));
     if (!count) continue;
     if (!row.available) {
       unavailableItems += 1;

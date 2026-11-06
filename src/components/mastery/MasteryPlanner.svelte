@@ -88,6 +88,7 @@
   const sortOptions = $derived([
     { value: "mastery_xp" as const, label: $tr("mastery.sort.masteryXp") },
     { value: "completeness" as const, label: $tr("mastery.planner.sortCompleteness") },
+    { value: "missing_parts" as const, label: $tr("mastery.sort.missingParts") },
     { value: "name" as const, label: $tr("common.name") },
   ]);
 

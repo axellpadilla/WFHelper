@@ -132,9 +132,12 @@
     ["name", $tr("common.name")],
     ["owned", $tr("common.owned")],
     ["parts_owned", $tr("mastery.sort.partsOwned")],
+    ["missing_parts", $tr("mastery.sort.missingParts")],
     ["mastery_xp", $tr("mastery.sort.masteryXp")],
     ["platinum", $tr("common.platinum")],
-  ] as Array<["name" | "owned" | "parts_owned" | "mastery_xp" | "platinum", string]>;
+  ] as Array<
+    ["name" | "owned" | "parts_owned" | "missing_parts" | "mastery_xp" | "platinum", string]
+  >;
   const FOUNDER_ITEM_NAMES = new Set(["Excalibur Prime", "Lato Prime", "Skana Prime"]);
 
   const INCOMPLETE_SETS_TAB = "__incomplete_sets";
@@ -154,7 +157,7 @@
     { key: "codex", labelKey: "mastery.viewCodex" },
     { key: "incarnon", labelKey: "mastery.viewIncarnon" },
   ];
-  const PLANNER_SORT_KEYS = ["mastery_xp", "completeness", "name"] as const;
+  const PLANNER_SORT_KEYS = ["mastery_xp", "completeness", "missing_parts", "name"] as const;
   const plannerSort = persistedString<PlannerSort>(
     "wf_mastery_planner_sort",
     PLANNER_SORT_KEYS,
@@ -468,6 +471,7 @@
         estimatedCost,
         buildable,
         partsOwned,
+        missingParts: components.filter((component) => !isComponentHeld(component)).length,
         foundryState: foundryStateOf(foundryStatus, buildable),
       };
     });
