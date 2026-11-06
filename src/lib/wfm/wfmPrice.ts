@@ -87,6 +87,9 @@ const backendErrorCooldown = new Map<string, number>(); // cacheKey -> expiry ti
 // Tracks slugs that returned no price data this session so the warning is
 // only logged once rather than on every hydration cycle.
 const _warnedNoDataSlugs = new Set<string>();
+// Same once-per-session rule for backend failures (auth, 5xx, network), which
+// otherwise reach the log only as no_data.
+const _warnedBackendErrorSlugs = new Set<string>();
 
 function pruneBackendErrorCooldown(): void {
   const now = Date.now();
@@ -196,7 +199,8 @@ async function fetchStatsJson(slug: string, priority: RequestPriority): Promise<
     if (!resp.ok) {
       return {
         ok: false,
-        transient: resp.status >= 500 || resp.status === 408,
+        transient:
+          resp.status === 401 || resp.status === 403 || resp.status === 408 || resp.status >= 500,
       };
     }
 
@@ -245,6 +249,12 @@ async function fetchPriceBySlugInternal(
 
   if (backendResult.status === "error") {
     bumpCounter("backendError");
+    if (!_warnedBackendErrorSlugs.has(slug)) {
+      _warnedBackendErrorSlugs.add(slug);
+      log.warn(
+        `[WFM price] Backend unreachable for "${slug}" (auth/5xx/network) - treating as transient, not caching no data`,
+      );
+    }
   }
 
   if (!fallbackAllowed) {

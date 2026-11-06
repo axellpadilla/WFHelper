@@ -16,7 +16,6 @@ const mockFetch = vi.mocked(fetchWithTimeout);
 const mockFetchJson = vi.mocked(fetchJsonWithTimeout);
 
 const DE_PRIMARY = "https://api.warframe.com/cdn/worldState.php";
-const DE_LEGACY = "https://content.warframe.com/dynamic/worldState.php";
 const ORACLE = "https://oracle.browse.wf/worldState.json";
 
 function response(status: number, body: unknown): Awaited<ReturnType<typeof fetchWithTimeout>> {
@@ -31,7 +30,7 @@ function worldStateUrls(): string[] {
   return [
     ...mockFetch.mock.calls.map((call) => String(call[0])),
     ...mockFetchJson.mock.calls.map((call) => String(call[0])),
-  ].filter((url) => url === DE_PRIMARY || url === DE_LEGACY || url === ORACLE);
+  ].filter((url) => url === DE_PRIMARY || url === ORACLE);
 }
 
 describe("world-state source chain", () => {
@@ -48,7 +47,7 @@ describe("world-state source chain", () => {
     expect(worldStateUrls()).toEqual([DE_PRIMARY]);
   });
 
-  it("falls through to the legacy DE path, then the oracle", async () => {
+  it("falls through to the oracle when the DE source fails", async () => {
     mockFetch.mockResolvedValue(response(404, {}));
     mockFetchJson.mockImplementation(async (url: string) => {
       if (url === ORACLE) return { ActiveMissions: [] };
@@ -57,20 +56,10 @@ describe("world-state source chain", () => {
 
     await fetchAndParse();
 
-    expect(worldStateUrls()).toEqual([DE_PRIMARY, DE_LEGACY, ORACLE]);
+    expect(worldStateUrls()).toEqual([DE_PRIMARY, ORACLE]);
   });
 
-  it("rejects an empty successful response and tries the next DE path", async () => {
-    mockFetch.mockImplementation(async (input: string | URL | Request) =>
-      response(200, String(input) === DE_PRIMARY ? {} : { ActiveMissions: [] }),
-    );
-
-    await fetchAndParse();
-
-    expect(worldStateUrls()).toEqual([DE_PRIMARY, DE_LEGACY]);
-  });
-
-  it("rejects empty responses from both DE paths before using the oracle", async () => {
+  it("rejects an empty successful response and tries the oracle", async () => {
     mockFetch.mockResolvedValue(response(200, {}));
     mockFetchJson.mockImplementation(async (url: string) => {
       if (url === ORACLE) return { ActiveMissions: [] };
@@ -79,7 +68,19 @@ describe("world-state source chain", () => {
 
     await fetchAndParse();
 
-    expect(worldStateUrls()).toEqual([DE_PRIMARY, DE_LEGACY, ORACLE]);
+    expect(worldStateUrls()).toEqual([DE_PRIMARY, ORACLE]);
+  });
+
+  it("rejects an empty DE response before using the oracle", async () => {
+    mockFetch.mockResolvedValue(response(200, {}));
+    mockFetchJson.mockImplementation(async (url: string) => {
+      if (url === ORACLE) return { ActiveMissions: [] };
+      throw new Error("no cycles in this test");
+    });
+
+    await fetchAndParse();
+
+    expect(worldStateUrls()).toEqual([DE_PRIMARY, ORACLE]);
   });
 
   it("throws instead of reporting an empty world when every source fails", async () => {

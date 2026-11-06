@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { app } from "electron";
 import WebSocket, { type RawData } from "ws";
 
 const WFM_WS_URL = "wss://ws.warframe.market/socket";
@@ -6,6 +7,15 @@ const WFM_WS_PROTOCOL = "wfm";
 const WFM_WS_ORIGIN = "https://warframe.market";
 export const WFM_WS_TIMEOUT_MS = 15_000;
 const WFM_WS_MAX_PAYLOAD_BYTES = 1024 * 1024;
+
+function buildWfmWsUserAgent(): string {
+  try {
+    const version = typeof app?.getVersion === "function" ? app.getVersion() : "unknown";
+    return `WFHelper/${version}`;
+  } catch {
+    return "WFHelper/unknown";
+  }
+}
 
 function generateWfmWsId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -15,6 +25,7 @@ function generateWfmWsId(): string {
 export function createWfmWebSocket(options: { handshakeTimeout?: number } = {}): WebSocket {
   return new WebSocket(WFM_WS_URL, WFM_WS_PROTOCOL, {
     origin: WFM_WS_ORIGIN,
+    headers: { "User-Agent": buildWfmWsUserAgent() },
     handshakeTimeout: options.handshakeTimeout,
     maxPayload: WFM_WS_MAX_PAYLOAD_BYTES,
     perMessageDeflate: false,
