@@ -175,7 +175,7 @@ interface NativeKoffi {
   unregister(callback: unknown): void;
 }
 
-function loadNativeBindings(): XdgGlobalShortcutsBindings {
+function loadNativeBindings(log: Logger): XdgGlobalShortcutsBindings {
   const koffi = require("koffi") as NativeKoffi;
   const glib = koffi.load("libglib-2.0.so.0");
   const gio = koffi.load("libgio-2.0.so.0");
@@ -192,9 +192,24 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
   const gSignalUnsubscribe = gio.func(
     "void g_dbus_connection_signal_unsubscribe(void *connection, unsigned int subscription_id)",
   );
+  // Never iterate GLib's default context: Electron/GTK owns it, and pumping GTK
+  // events from a Node timer reenters Chromium. Signals attach to this private
+  // context instead.
+  const portalContext = glib.func("void *g_main_context_new(void)")();
+  const gMainContextPush = glib.func("void g_main_context_push_thread_default(void *context)");
+  const gMainContextPop = glib.func("void g_main_context_pop_thread_default(void *context)");
   const gMainContextIteration = glib.func(
     "int g_main_context_iteration(void *context, int may_block)",
   );
+  function withPortalContext<T>(fn: () => T): T {
+    gMainContextPush(portalContext);
+    try {
+      return fn();
+    } finally {
+      gMainContextPop(portalContext);
+    }
+  }
+
   const gVariantNew = glib.func("void *g_variant_new(const char *format_string, ...)");
   const gVariantNewString = glib.func("void *g_variant_new_string(const char *string)");
   const gVariantBuilderNew = glib.func("void *g_variant_builder_new(void *type)");
@@ -292,26 +307,37 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
         _iface: unknown,
         _member: unknown,
         parameters: any,
-      ) => callback(parameters, typeof signalPath === "string" ? signalPath : ""),
+      ) => {
+        try {
+          callback(parameters, typeof signalPath === "string" ? signalPath : "");
+        } catch (err) {
+          // An exception escaping into the Koffi trampoline takes the process
+          // down, so portal callbacks fail closed and stay logged.
+          log.warn("[XdgGlobalShortcuts] signal callback failed:", errorText(err));
+        }
+      },
       koffi.pointer(signalCallbackType),
     );
-    const id = gSignalSubscribe(
-      connection,
-      null,
-      interfaceName,
-      member,
-      objectPath,
-      null,
-      0,
-      cb,
-      null,
-      null,
+    const id = withPortalContext(() =>
+      gSignalSubscribe(
+        connection,
+        null,
+        interfaceName,
+        member,
+        objectPath,
+        null,
+        0,
+        cb,
+        null,
+        null,
+      ),
     );
-    return { id, cb };
+    return { id, cb, closed: false };
   }
 
   function unsubscribe(connection: any, subscription: any): void {
-    if (!subscription) return;
+    if (!subscription || subscription.closed) return;
+    subscription.closed = true;
     gSignalUnsubscribe(connection, subscription.id);
     koffi.unregister(subscription.cb);
   }
@@ -322,6 +348,19 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
   let cachedConnection: any = null;
   let activatedSubscription: any = null;
   const transientSubscriptions = new Set<any>();
+
+  function unsubscribeAfterCallback(connection: any, subscription: any): void {
+    transientSubscriptions.delete(subscription);
+    // Koffi cannot unregister the callback that is currently on the stack;
+    // defer until the trampoline has returned.
+    setImmediate(() => {
+      try {
+        unsubscribe(connection, subscription);
+      } catch (err) {
+        log.warn("[XdgGlobalShortcuts] deferred unsubscribe failed:", errorText(err));
+      }
+    });
+  }
 
   function clearTransientSubscriptions(connection: any): void {
     for (const subscription of [...transientSubscriptions]) {
@@ -334,9 +373,9 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
     connect() {
       if (cachedConnection) return cachedConnection;
       const error: any[] = [null];
-      const connection = gBusGetSync(2, null, error);
+      const connection = withPortalContext(() => gBusGetSync(2, null, error));
       if (!connection) {
-        const message = error[0] ? String(error[0]) : "Could not connect to the session bus";
+        const message = error[0] ? "Could not connect to the session bus" : "No session bus";
         if (error[0]) gErrorFree(error[0]);
         throw new Error(message);
       }
@@ -430,8 +469,7 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
           } finally {
             gVariantUnref(responseCode);
             gVariantUnref(results);
-            transientSubscriptions.delete(subscription);
-            unsubscribe(connection, subscription);
+            unsubscribeAfterCallback(connection, subscription);
           }
         },
       );
@@ -497,8 +535,7 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
         gVariantUnref(reply);
       }
       const subscription = subscribe(connection, requestInterface, "Response", requestPath, () => {
-        transientSubscriptions.delete(subscription);
-        unsubscribe(connection, subscription);
+        unsubscribeAfterCallback(connection, subscription);
       });
       transientSubscriptions.add(subscription);
     },
@@ -518,7 +555,7 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
       unsubscribe(connection, subscription);
     },
     iterateMainContext() {
-      gMainContextIteration(null, 0);
+      gMainContextIteration(portalContext, 0);
     },
   };
 }
@@ -613,7 +650,7 @@ export function createXdgGlobalShortcutsPortal(
   function ensureInitialized(): void {
     if (!nativePlatform || portalUnavailable || connection || registered.size === 0) return;
     try {
-      bindings ??= loadNativeBindings();
+      bindings ??= loadNativeBindings(options.log);
       connection = bindings.connect();
       // The app id has to exist before any portal call, and the registry checks
       // it against a .desktop entry whose Exec resolves on this machine.
@@ -649,7 +686,11 @@ export function createXdgGlobalShortcutsPortal(
     const timestamp = now();
     if (timestamp - entry.lastFiredAt < DEDUPLICATION_WINDOW_MS) return;
     entry.lastFiredAt = timestamp;
-    entry.callback();
+    try {
+      entry.callback();
+    } catch (err) {
+      options.log.warn("[XdgGlobalShortcuts] shortcut callback failed:", errorText(err));
+    }
   }
 
   function flushPending(): void {
