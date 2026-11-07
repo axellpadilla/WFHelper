@@ -50,11 +50,12 @@ describe("filter control registry", () => {
 
   it("gives inventory the advanced controls and no basic-only select", () => {
     const inventory = defaultFilterControlOrder("inventory");
-    expect(inventory.slice(0, 3)).toEqual(["search", "mastery", "sort"]);
+    expect(inventory.slice(0, 3)).toEqual(["search", "sort", "orderPlaced"]);
     expect(inventory).toContain("spares");
     expect(inventory).toContain("vaultedChips");
     // The inventory bars never pass basicVariant="full", so other basic selects stay off.
     expect(inventory).not.toContain("prime");
+    expect(inventory).not.toContain("mastery");
     expect(inventory).not.toContain("vaulted");
     expect(inventory).not.toContain("foundryState");
   });
