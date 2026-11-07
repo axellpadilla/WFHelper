@@ -28,12 +28,12 @@ describe("shared filter persistence", () => {
     const filters = await loadFilters();
     filters.updateSharedFilters("inventory", {
       search: "loki",
-      masteredMode: "mastered",
       mastered: "yes",
       minimumDucats: 45,
     });
     filters.updateSharedFilters("foundry", {
       search: "blueprint",
+      masteredMode: "not_mastered",
       sortBy: "count",
       sortDirection: "desc",
       foundryState: "buildable_sets",
@@ -46,12 +46,13 @@ describe("shared filter persistence", () => {
     const restored = await import("../../../src/stores/filters.js");
     expect(get(restored.sharedFilters("inventory"))).toMatchObject({
       search: "",
-      masteredMode: "mastered",
+      masteredMode: "all",
       mastered: "yes",
       minimumDucats: 45,
     });
     expect(get(restored.sharedFilters("foundry"))).toMatchObject({
       search: "",
+      masteredMode: "not_mastered",
       sortBy: "count",
       sortDirection: "desc",
       foundryState: "buildable_sets",
@@ -89,18 +90,15 @@ describe("shared filter persistence", () => {
     const filters = await loadFilters();
     filters.updateSharedFilters("inventory", {
       search: "loki",
-      masteredMode: "not_mastered",
       minimumPlatinum: 100,
     });
     filters.resetSharedFilters("inventory");
 
     expect(get(filters.sharedFilters("inventory"))).toMatchObject({
       search: "",
-      masteredMode: "all",
       minimumPlatinum: 0,
     });
     expect(saved().inventory).toMatchObject({
-      masteredMode: "all",
       minimumPlatinum: 0,
     });
     expect(saved().inventory).not.toHaveProperty("search");
@@ -109,8 +107,19 @@ describe("shared filter persistence", () => {
     const restored = await import("../../../src/stores/filters.js");
     expect(get(restored.sharedFilters("inventory"))).toMatchObject({
       search: "",
-      masteredMode: "all",
       minimumPlatinum: 0,
     });
+  });
+
+  it("drops an inventory masteredMode saved before the selector was removed", async () => {
+    const filters = await loadFilters({
+      [STORAGE_KEY]: JSON.stringify({
+        inventory: { masteredMode: "not_mastered" },
+        foundry: { masteredMode: "mastered" },
+      }),
+    });
+
+    expect(get(filters.sharedFilters("inventory")).masteredMode).toBe("all");
+    expect(get(filters.sharedFilters("foundry")).masteredMode).toBe("mastered");
   });
 });

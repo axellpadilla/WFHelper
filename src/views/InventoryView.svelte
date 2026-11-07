@@ -699,7 +699,6 @@
         : visibleItems.length + (showEverythingResources ? filteredResources.length : 0);
   function countActiveAdvancedFilters(state: SharedFiltersState): number {
     let active = 0;
-    if (state.masteredMode !== "all") active++;
     if (state.orderPlaced !== "all") active++;
     if (state.mastered !== "all") active++;
     if (state.spares !== "all") active++;
