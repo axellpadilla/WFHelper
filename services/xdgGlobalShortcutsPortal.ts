@@ -2,6 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+/** Koffi/GVariant errors are not always primitive-convertible. */
+function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  try {
+    return String(err);
+  } catch {
+    return Object.prototype.toString.call(err);
+  }
+}
+
 interface ShortcutBackend {
   register(accelerator: string, callback: () => void): boolean;
   unregister(accelerator: string): void;
@@ -96,29 +106,61 @@ export function electronToXdgTrigger(accelerator: string): string | null {
 interface EnsurePortalDesktopFileOptions {
   env?: NodeJS.ProcessEnv;
   homeDir?: string;
+  execPath?: string;
   existsSync?: (file: string) => boolean;
+  readFileSync?: (file: string, encoding: BufferEncoding) => string;
   mkdirSync?: (directory: string, options: { recursive: true }) => unknown;
   writeFileSync?: (file: string, content: string, encoding: BufferEncoding) => void;
 }
 
-/** Ensure the portal's host registry can resolve the wfhelper application ID. */
+/** Must match `build.appId` in package.json and the desktop file basename. */
+export const PORTAL_APP_ID = "com.wfhelper.app";
+
+/** Spaces and shell metacharacters need the desktop-entry quoting rules. */
+function quoteDesktopExec(execPath: string): string {
+  if (/^[A-Za-z0-9_./+-]+$/.test(execPath)) return execPath;
+  return `"${execPath.replace(/(["\\`$])/g, "\\$1")}"`;
+}
+
+/** Ensure the portal's host registry can resolve the wfhelper application ID.
+ *
+ *  The registry validates the app id against a .desktop file and rejects the
+ *  entry when its Exec does not resolve. An AppImage's binary lives under a
+ *  fresh /tmp/.mount_* path on every launch, so the file is rewritten with the
+ *  current executable instead of a bare `wfhelper` that is not on PATH. */
 export function ensurePortalDesktopFile(options: EnsurePortalDesktopFileOptions = {}): string {
   const env = options.env ?? process.env;
   const userData =
     env.XDG_DATA_HOME || path.join(options.homeDir ?? os.homedir(), ".local", "share");
-  const userDesktop = path.join(userData, "applications", "wfhelper.desktop");
-  const systemDesktop = "/usr/share/applications/wfhelper.desktop";
+  const desktopName = `${PORTAL_APP_ID}.desktop`;
+  const userDesktop = path.join(userData, "applications", desktopName);
+  const systemDesktop = `/usr/share/applications/${desktopName}`;
   const existsSync = options.existsSync ?? fs.existsSync;
-  if (existsSync(userDesktop)) return userDesktop;
-  if (existsSync(systemDesktop)) return systemDesktop;
+  if (!existsSync(userDesktop) && existsSync(systemDesktop)) return systemDesktop;
 
-  const directory = path.dirname(userDesktop);
-  (options.mkdirSync ?? fs.mkdirSync)(directory, { recursive: true });
-  (options.writeFileSync ?? fs.writeFileSync)(
-    userDesktop,
-    "[Desktop Entry]\nType=Application\nName=WFHelper\nNoDisplay=true\nExec=wfhelper\n",
-    "utf8",
-  );
+  const readFileSync = options.readFileSync ?? fs.readFileSync;
+  let current: string | null = null;
+  if (existsSync(userDesktop)) {
+    try {
+      current = readFileSync(userDesktop, "utf8");
+    } catch {
+      current = null;
+    }
+  }
+  // Leave a hand-written user entry alone when a packaged system entry exists.
+  if (current !== null && !current.includes("X-WFHelper-Portal=1") && existsSync(systemDesktop)) {
+    return systemDesktop;
+  }
+
+  const execPath = options.execPath ?? process.execPath;
+  const contents = `[Desktop Entry]\nType=Application\nName=WFHelper\nNoDisplay=true\nExec=${quoteDesktopExec(
+    execPath,
+  )}\nX-WFHelper-Portal=1\n`;
+  if (current !== contents) {
+    const directory = path.dirname(userDesktop);
+    (options.mkdirSync ?? fs.mkdirSync)(directory, { recursive: true });
+    (options.writeFileSync ?? fs.writeFileSync)(userDesktop, contents, "utf8");
+  }
   return userDesktop;
 }
 
@@ -127,6 +169,8 @@ interface NativeKoffi {
   load(name: string): { func(signature: string): (...args: any[]) => any };
   proto(signature: string): unknown;
   pointer(type: unknown): unknown;
+  struct(name: string, fields: Record<string, string>): unknown;
+  decode(pointer: any, type: unknown): any;
   register(callback: (...args: any[]) => void, type: unknown): unknown;
   unregister(callback: unknown): void;
 }
@@ -172,6 +216,20 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
   );
   const gVariantUnref = glib.func("void g_variant_unref(void *value)");
   const gErrorFree = glib.func("void g_error_free(void *error)");
+  const GErrorType = koffi.struct("GError", {
+    domain: "uint32",
+    code: "int",
+    message: "char *",
+  });
+  function gErrorMessage(error: any): string {
+    if (!error) return "Unknown D-Bus error";
+    try {
+      const decoded = koffi.decode(error, GErrorType) as { message?: string };
+      return decoded?.message || "Unknown D-Bus error";
+    } catch {
+      return "Unknown D-Bus error";
+    }
+  }
   const signalCallbackType = koffi.proto(
     "void PortalSignalCallback(void *connection, const char *sender, const char *object_path, const char *interface_name, const char *signal_name, void *parameters, void *user_data)",
   );
@@ -196,27 +254,25 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
   ): any {
     const error: any[] = [null];
     let reply: any;
-    try {
-      reply = gDbusCall(
-        connection,
-        "org.freedesktop.portal.Desktop",
-        objectPath,
-        interfaceName,
-        method,
-        parameters,
-        null,
-        0,
-        5000,
-        null,
-        error,
-      );
-    } finally {
-      if (parameters) gVariantUnref(parameters);
-    }
+    // The call consumes the floating parameters reference; unreffing it here
+    // would drop it twice and emit GLib criticals.
+    reply = gDbusCall(
+      connection,
+      "org.freedesktop.portal.Desktop",
+      objectPath,
+      interfaceName,
+      method,
+      parameters,
+      null,
+      0,
+      5000,
+      null,
+      error,
+    );
     if (!reply) {
-      const message = error[0] ? String(error[0]) : `${interfaceName}.${method} failed`;
+      const detail = gErrorMessage(error[0]);
       if (error[0]) gErrorFree(error[0]);
-      throw new Error(message);
+      throw new Error(`${interfaceName}.${method} failed: ${detail}`);
     }
     return reply;
   }
@@ -312,7 +368,7 @@ function loadNativeBindings(): XdgGlobalShortcutsBindings {
     },
     registerApp(connection) {
       const options = variantDict({});
-      const parameters = gVariantNew("(s@a{sv})", "str", "wfhelper", "void *", options);
+      const parameters = gVariantNew("(s@a{sv})", "str", PORTAL_APP_ID, "void *", options);
       const reply = call(
         connection,
         "org.freedesktop.host.portal.Registry",
@@ -489,6 +545,12 @@ interface RegisteredShortcut {
   lastFiredAt: number;
 }
 
+/** Stable across launches: the portal remembers approvals by app id + id, so a
+ *  random id would make GNOME ask again on every session. */
+function portalShortcutId(trigger: string): string {
+  return `wfhelper_${trigger.replace(/[^A-Za-z0-9]+/g, "_")}`;
+}
+
 const BATCH_DELAY_MS = 25;
 const POLL_INTERVAL_MS = 50;
 const DEDUPLICATION_WINDOW_MS = 150;
@@ -536,7 +598,7 @@ export function createXdgGlobalShortcutsPortal(
           try {
             bindings?.closeSession(initializedConnection, handle);
           } catch (err) {
-            options.log.warn("[XdgGlobalShortcuts] stale session close failed:", String(err));
+            options.log.warn("[XdgGlobalShortcuts] stale session close failed:", errorText(err));
           }
         }
         return;
@@ -553,22 +615,31 @@ export function createXdgGlobalShortcutsPortal(
     try {
       bindings ??= loadNativeBindings();
       connection = bindings.connect();
+      // The app id has to exist before any portal call, and the registry checks
+      // it against a .desktop entry whose Exec resolves on this machine.
+      ensurePortalDesktopFile(options.desktopFile);
+      try {
+        bindings.registerApp(connection);
+      } catch (err) {
+        options.log.warn("[XdgGlobalShortcuts] app id registration failed:", errorText(err));
+      }
       const version = bindings.getVersion(connection);
       if (version < 1) throw new Error(`GlobalShortcuts portal version ${version} is unsupported`);
-      ensurePortalDesktopFile(options.desktopFile);
-      bindings.registerApp(connection);
       startPortalSession();
       pollTimer = repeat(() => {
         try {
           bindings?.iterateMainContext();
         } catch (err) {
-          options.log.warn("[XdgGlobalShortcuts] main-context iteration failed:", String(err));
+          options.log.warn("[XdgGlobalShortcuts] main-context iteration failed:", errorText(err));
         }
       }, POLL_INTERVAL_MS);
       options.log.info("[XdgGlobalShortcuts] connected to the GlobalShortcuts portal");
     } catch (err) {
       portalUnavailable = true;
-      options.log.warn("[XdgGlobalShortcuts] portal unavailable; using X11 fallback:", String(err));
+      options.log.warn(
+        "[XdgGlobalShortcuts] portal unavailable; using X11 fallback:",
+        errorText(err),
+      );
       cleanupPortal();
       portalUnavailable = true;
     }
@@ -596,12 +667,12 @@ export function createXdgGlobalShortcutsPortal(
       try {
         bindings.closeSession(connection, oldSession);
       } catch (err) {
-        options.log.warn("[XdgGlobalShortcuts] session close on rebind failed:", String(err));
+        options.log.warn("[XdgGlobalShortcuts] session close on rebind failed:", errorText(err));
       }
       try {
         startPortalSession();
       } catch (err) {
-        options.log.warn("[XdgGlobalShortcuts] session recreate failed:", String(err));
+        options.log.warn("[XdgGlobalShortcuts] session recreate failed:", errorText(err));
       }
       return;
     }
@@ -614,7 +685,7 @@ export function createXdgGlobalShortcutsPortal(
       sessionBound = true;
       bindings.bindShortcuts(connection, session, shortcuts);
     } catch (err) {
-      options.log.warn("[XdgGlobalShortcuts] BindShortcuts failed:", String(err));
+      options.log.warn("[XdgGlobalShortcuts] BindShortcuts failed:", errorText(err));
     }
   }
 
@@ -634,13 +705,13 @@ export function createXdgGlobalShortcutsPortal(
         try {
           bindings.closeSession(connection, session);
         } catch (err) {
-          options.log.warn("[XdgGlobalShortcuts] session close failed:", String(err));
+          options.log.warn("[XdgGlobalShortcuts] session close failed:", errorText(err));
         }
       } else if (activatedSubscription) {
         try {
           bindings.unsubscribe(connection, activatedSubscription);
         } catch (err) {
-          options.log.warn("[XdgGlobalShortcuts] signal unsubscribe failed:", String(err));
+          options.log.warn("[XdgGlobalShortcuts] signal unsubscribe failed:", errorText(err));
         }
       }
     }
@@ -657,7 +728,7 @@ export function createXdgGlobalShortcutsPortal(
       const trigger = electronToXdgTrigger(accelerator);
       const entry: RegisteredShortcut = {
         callback,
-        portalId: `shortcut_${registered.size}_${Math.random().toString(36).slice(2, 10)}`,
+        portalId: portalShortcutId(trigger ?? accelerator),
         trigger: trigger ?? "",
         lastFiredAt: Number.NEGATIVE_INFINITY,
       };
