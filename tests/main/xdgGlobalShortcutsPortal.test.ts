@@ -8,7 +8,7 @@ import {
   type XdgGlobalShortcutsBindings,
 } from "../../services/xdgGlobalShortcutsPortal";
 
-function createHarness() {
+function createHarness(rebind = false) {
   let onActivated: ((id: string) => void) | null = null;
   let onSession: ((handle: string | null) => void) | null = null;
   const fallbackCallbacks = new Map<string, () => void>();
@@ -24,6 +24,7 @@ function createHarness() {
       onSession = callback;
     }),
     bindShortcuts: vi.fn(),
+    ...(rebind ? { rebindShortcuts: vi.fn() } : {}),
     closeSession: vi.fn(),
     unsubscribe: vi.fn(),
     iterateMainContext: vi.fn(),
@@ -284,6 +285,7 @@ describe("XDG GlobalShortcuts portal backend", () => {
     vi.advanceTimersByTime(25);
 
     harness.shortcut.unregister("F8");
+    vi.advanceTimersByTime(25);
 
     expect(harness.fallback.unregister).toHaveBeenCalledWith("F8");
     expect(harness.bindings.closeSession).toHaveBeenCalledWith(
@@ -325,5 +327,42 @@ describe("XDG GlobalShortcuts portal backend", () => {
     expect(harness.bindings.bindShortcuts).toHaveBeenCalledTimes(2);
     const secondCallShortcuts = vi.mocked(harness.bindings.bindShortcuts).mock.calls[1][2];
     expect(secondCallShortcuts.map(({ trigger }) => trigger).sort()).toEqual(["F7", "F8"]);
+  });
+
+  it("rebinds a GNOME session instead of asking for approval again", () => {
+    vi.useFakeTimers();
+    const harness = createHarness(true);
+    harness.shortcut.register("F8", vi.fn());
+    harness.startSession("/session/gnome");
+    vi.advanceTimersByTime(25);
+    expect(harness.bindings.bindShortcuts).toHaveBeenCalledTimes(1);
+
+    harness.shortcut.register("F7", vi.fn());
+    vi.advanceTimersByTime(25);
+
+    expect(harness.bindings.rebindShortcuts).toHaveBeenCalledWith(
+      "com.wfhelper.app",
+      expect.arrayContaining([
+        expect.objectContaining({ id: "wfhelper_F7", trigger: "F7" }),
+        expect.objectContaining({ id: "wfhelper_F8", trigger: "F8" }),
+      ]),
+    );
+    expect(harness.bindings.closeSession).not.toHaveBeenCalled();
+    expect(harness.bindings.createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebinds an empty set on the GNOME session when the game exits", () => {
+    vi.useFakeTimers();
+    const harness = createHarness(true);
+    harness.shortcut.register("F8", vi.fn());
+    harness.startSession("/session/gnome");
+    vi.advanceTimersByTime(25);
+
+    harness.shortcut.unregister("F8");
+    vi.advanceTimersByTime(25);
+
+    expect(harness.bindings.rebindShortcuts).toHaveBeenCalledWith("com.wfhelper.app", []);
+    expect(harness.bindings.closeSession).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -35,6 +35,8 @@ export interface XdgGlobalShortcutsBindings {
   subscribeActivated(connection: unknown, callback: (id: string) => void): unknown;
   createSession(connection: unknown, callback: (handle: string | null) => void): void;
   bindShortcuts(connection: unknown, session: string, shortcuts: PortalShortcut[]): void;
+  /** GNOME-only: change an existing session's grabs without a new approval UI. */
+  rebindShortcuts?(appId: string, shortcuts: PortalShortcut[]): void;
   closeSession(connection: unknown, session: string): void;
   unsubscribe(connection: unknown, subscription: unknown): void;
   iterateMainContext(): void;
@@ -260,12 +262,59 @@ function loadNativeBindings(log: Logger): XdgGlobalShortcutsBindings {
     return result;
   }
 
+  function variantDictOfVariants(entries: Record<string, any>): any {
+    const type = gVariantTypeNew("a{sv}");
+    const builder = gVariantBuilderNew(type);
+    for (const [key, value] of Object.entries(entries)) {
+      gVariantBuilderAdd(builder, "{sv}", "str", key, "void *", value);
+    }
+    const result = gVariantBuilderEnd(builder);
+    gVariantBuilderUnref(builder);
+    return result;
+  }
+
+  /** Portal triggers use `CTRL+F8`; the GNOME settings provider uses `<ctrl>F8`. */
+  function gnomeTrigger(trigger: string): string {
+    const modifiers: Record<string, string> = {
+      CTRL: "<ctrl>",
+      SHIFT: "<shift>",
+      ALT: "<alt>",
+      LOGO: "<super>",
+      NUM: "<mod2>",
+    };
+    return trigger
+      .split("+")
+      .map((part) => modifiers[part] ?? part)
+      .join("");
+  }
+
+  function shortcutArray(shortcuts: PortalShortcut[]): any {
+    const type = gVariantTypeNew("a(sa{sv})");
+    const builder = gVariantBuilderNew(type);
+    for (const shortcut of shortcuts) {
+      const triggerType = gVariantTypeNew("as");
+      const triggerBuilder = gVariantBuilderNew(triggerType);
+      gVariantBuilderAdd(triggerBuilder, "s", gnomeTrigger(shortcut.trigger));
+      const triggers = gVariantBuilderEnd(triggerBuilder);
+      gVariantBuilderUnref(triggerBuilder);
+      const options = variantDictOfVariants({
+        description: gVariantNewString(shortcut.id),
+        shortcuts: triggers,
+      });
+      gVariantBuilderAdd(builder, "(s@a{sv})", "str", shortcut.id, "void *", options);
+    }
+    const result = gVariantBuilderEnd(builder);
+    gVariantBuilderUnref(builder);
+    return result;
+  }
+
   function call(
     connection: any,
     interfaceName: string,
     method: string,
     parameters: any,
     objectPath = "/org/freedesktop/portal/desktop",
+    busName = "org.freedesktop.portal.Desktop",
   ): any {
     const error: any[] = [null];
     let reply: any;
@@ -273,7 +322,7 @@ function loadNativeBindings(log: Logger): XdgGlobalShortcutsBindings {
     // would drop it twice and emit GLib criticals.
     reply = gDbusCall(
       connection,
-      "org.freedesktop.portal.Desktop",
+      busName,
       objectPath,
       interfaceName,
       method,
@@ -539,6 +588,20 @@ function loadNativeBindings(log: Logger): XdgGlobalShortcutsBindings {
       });
       transientSubscriptions.add(subscription);
     },
+    rebindShortcuts(appId, shortcuts) {
+      if (!cachedConnection) throw new Error("Session bus is not connected");
+      const array = shortcutArray(shortcuts);
+      const parameters = gVariantNew("(s@a(sa{sv}))", "str", appId, "void *", array);
+      const reply = call(
+        cachedConnection,
+        "org.gnome.GlobalShortcutsRebind",
+        "RebindShortcuts",
+        parameters,
+        "/org/gnome/globalshortcuts",
+        "org.freedesktop.impl.portal.desktop.gnome",
+      );
+      gVariantUnref(reply);
+    },
     closeSession(connection, session) {
       const reply = call(connection, sessionInterface, "Close", gVariantNew("()"), session);
       gVariantUnref(reply);
@@ -614,7 +677,25 @@ export function createXdgGlobalShortcutsPortal(
   let batchTimer: ReturnType<typeof setTimeout> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let portalUnavailable = false;
+  let rebindSupported = true;
   let generation = 0;
+
+  function startPolling(): void {
+    if (pollTimer || !bindings || !connection) return;
+    pollTimer = repeat(() => {
+      try {
+        bindings?.iterateMainContext();
+      } catch (err) {
+        options.log.warn("[XdgGlobalShortcuts] main-context iteration failed:", errorText(err));
+      }
+    }, POLL_INTERVAL_MS);
+  }
+
+  function stopPolling(): void {
+    if (!pollTimer) return;
+    stopRepeat(pollTimer);
+    pollTimer = null;
+  }
 
   function subscribeActivatedIfNeeded(): void {
     if (!bindings || !connection || activatedSubscription) return;
@@ -640,7 +721,15 @@ export function createXdgGlobalShortcutsPortal(
         }
         return;
       }
-      if (!handle || registered.size === 0) return;
+      if (!handle) return;
+      if (registered.size === 0) {
+        try {
+          bindings?.closeSession(initializedConnection, handle);
+        } catch (err) {
+          options.log.warn("[XdgGlobalShortcuts] empty session close failed:", errorText(err));
+        }
+        return;
+      }
       session = handle;
       sessionBound = false;
       flushPending();
@@ -663,13 +752,7 @@ export function createXdgGlobalShortcutsPortal(
       const version = bindings.getVersion(connection);
       if (version < 1) throw new Error(`GlobalShortcuts portal version ${version} is unsupported`);
       startPortalSession();
-      pollTimer = repeat(() => {
-        try {
-          bindings?.iterateMainContext();
-        } catch (err) {
-          options.log.warn("[XdgGlobalShortcuts] main-context iteration failed:", errorText(err));
-        }
-      }, POLL_INTERVAL_MS);
+      startPolling();
       options.log.info("[XdgGlobalShortcuts] connected to the GlobalShortcuts portal");
     } catch (err) {
       portalUnavailable = true;
@@ -699,7 +782,29 @@ export function createXdgGlobalShortcutsPortal(
       batchTimer = null;
     }
     if (!session || !bindings || pending.size === 0) return;
+    const shortcuts = [...registered.values()]
+      .filter((entry) => entry.trigger)
+      .map((entry) => ({ id: entry.portalId, trigger: entry.trigger }));
+
     if (sessionBound) {
+      // GNOME treats BindShortcuts as a configuration request and shows its
+      // dialog for every new session. Rebind the existing session instead so a
+      // game restart only changes the grabs, not the user's approval.
+      if (rebindSupported && bindings.rebindShortcuts) {
+        try {
+          bindings.rebindShortcuts(PORTAL_APP_ID, shortcuts);
+          pending.clear();
+          if (shortcuts.length === 0) stopPolling();
+          else startPolling();
+          return;
+        } catch (err) {
+          rebindSupported = false;
+          options.log.warn(
+            "[XdgGlobalShortcuts] RebindShortcuts failed; recreating session:",
+            errorText(err),
+          );
+        }
+      }
       const oldSession = session;
       session = null;
       sessionBound = false;
@@ -710,6 +815,11 @@ export function createXdgGlobalShortcutsPortal(
       } catch (err) {
         options.log.warn("[XdgGlobalShortcuts] session close on rebind failed:", errorText(err));
       }
+      if (shortcuts.length === 0) {
+        pending.clear();
+        stopPolling();
+        return;
+      }
       try {
         startPortalSession();
       } catch (err) {
@@ -717,14 +827,16 @@ export function createXdgGlobalShortcutsPortal(
       }
       return;
     }
-    const shortcuts = [...registered.values()]
-      .filter((entry) => entry.trigger)
-      .map((entry) => ({ id: entry.portalId, trigger: entry.trigger }));
+
+    if (shortcuts.length === 0) {
+      pending.clear();
+      return;
+    }
     pending.clear();
-    if (shortcuts.length === 0) return;
     try {
       sessionBound = true;
       bindings.bindShortcuts(connection, session, shortcuts);
+      startPolling();
     } catch (err) {
       options.log.warn("[XdgGlobalShortcuts] BindShortcuts failed:", errorText(err));
     }
@@ -799,8 +911,7 @@ export function createXdgGlobalShortcutsPortal(
       registered.delete(accelerator);
       pending.delete(accelerator);
       options.fallback.unregister(accelerator);
-      if (registered.size === 0) cleanupPortal();
-      else if (session && entry?.trigger) {
+      if (session && entry?.trigger) {
         pending.set(accelerator, { id: entry.portalId, trigger: entry.trigger });
         if (!batchTimer) {
           batchTimer = schedule(() => {
@@ -808,6 +919,10 @@ export function createXdgGlobalShortcutsPortal(
             flushPending();
           }, BATCH_DELAY_MS);
         }
+      } else if (registered.size === 0) {
+        // Keep the portal session alive so the next game start can rebind
+        // without another approval prompt.
+        stopPolling();
       }
     },
     dispose(): void {
