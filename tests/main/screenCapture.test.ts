@@ -551,6 +551,25 @@ describe("captureScreenFast off-win32/off-linux (desktopCapturer)", () => {
       expect.objectContaining({ thumbnailSize: { width: 960, height: 540 } }),
     );
   });
+
+  it("caps a 4K desktop share at 1080p", async () => {
+    setPlatform("darwin");
+    primeDesktopCapturer(
+      makeFakeNativeImage(1920, 1080, () => BRIGHT),
+      {
+        id: 1,
+        width: 3840,
+        height: 2160,
+      },
+    );
+
+    const result = await captureScreenFast(null);
+
+    expect(result!.image.getSize()).toEqual({ width: 1920, height: 1080 });
+    expect(mocks.getSources).toHaveBeenCalledWith(
+      expect.objectContaining({ thumbnailSize: { width: 1920, height: 1080 } }),
+    );
+  });
 });
 
 describe("captureScreenFast on win32 (GDI)", () => {
@@ -588,6 +607,30 @@ describe("captureScreenFast on win32 (GDI)", () => {
     mocks.createFromBitmap.mockReturnValue(makeFakeNativeImage(480, 270, () => BRIGHT));
     const result = await captureScreenFast(null);
     expect(result!.image.getSize()).toEqual({ width: 400, height: 250 });
+    expect(result!.sourceType).toBe("window");
+  });
+
+  it("caps a monitor capture above 1080p and scales the client rect", async () => {
+    setPlatform("win32");
+    mocks.captureGdi.mockReturnValue({
+      buffer: Buffer.alloc(2400 * 1350 * 4, 160),
+      width: 2400,
+      height: 1350,
+      displayId: "0",
+      originX: 0,
+      originY: 0,
+    });
+    mocks.getGameWindowClientRect.mockReturnValue({ x: 200, y: 100, width: 1000, height: 500 });
+    mocks.createFromBitmap.mockReturnValue(makeFakeNativeImage(2400, 1350, () => BRIGHT));
+
+    const result = await captureScreenFast(null);
+
+    // The native frame is capped first; the window rect then maps onto it.
+    expect(mocks.createFromBitmap).toHaveBeenCalledWith(expect.any(Buffer), {
+      width: 2400,
+      height: 1350,
+    });
+    expect(result!.image.getSize()).toEqual({ width: 800, height: 400 });
     expect(result!.sourceType).toBe("window");
   });
 

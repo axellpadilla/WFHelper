@@ -123,6 +123,20 @@ export function fakeImage(width: number, height: number, pixels: Uint8Array): Na
       }
       return fakeImage(rect.width, rect.height, out);
     },
+    // Metrics are irrelevant to the capture tests; nearest-neighbour keeps the
+    // existing crop assertions meaningful when a frame is capped.
+    resize: ({ width: targetWidth, height: targetHeight }: { width: number; height: number }) => {
+      const out = new Uint8Array(targetWidth * targetHeight * 4);
+      for (let y = 0; y < targetHeight; y++) {
+        for (let x = 0; x < targetWidth; x++) {
+          const fromX = Math.min(width - 1, Math.floor((x * width) / targetWidth));
+          const fromY = Math.min(height - 1, Math.floor((y * height) / targetHeight));
+          const from = (fromY * width + fromX) * 4;
+          out.set(pixels.subarray(from, from + 4), (y * targetWidth + x) * 4);
+        }
+      }
+      return fakeImage(targetWidth, targetHeight, out);
+    },
   };
   return image as unknown as NativeImage;
 }

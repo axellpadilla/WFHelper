@@ -8,6 +8,7 @@ import type {
 import { execFile } from "node:child_process";
 import path from "node:path";
 
+import { capCaptureSize } from "./captureSize";
 import { resolveOutputForGame } from "./gameOutput";
 import { copyOutput, layerOutputRects, screenCopyFailure } from "./layerShell";
 import { usesScreenCopy } from "./linuxDisplayBackend";
@@ -548,10 +549,20 @@ async function _captureScreenCopyFrame(): Promise<LinuxFrame | null> {
   if (!copy) return null;
   try {
     const { nativeImage } = await import("electron");
-    const img = nativeImage.createFromBitmap(copy.bitmap, {
+    let img = nativeImage.createFromBitmap(copy.bitmap, {
       width: copy.width,
       height: copy.height,
     });
+    if (!img.isEmpty()) {
+      const capped = capCaptureSize(copy.width, copy.height);
+      if (capped.width !== copy.width || capped.height !== copy.height) {
+        log.info(
+          `[LinuxCapture] capped screen copy ${copy.width}x${copy.height} -> ` +
+            `${capped.width}x${capped.height}`,
+        );
+        img = img.resize({ width: capped.width, height: capped.height, quality: "good" });
+      }
+    }
     return img.isEmpty() ? null : { image: img, origin: { kind: "screen-copy", output } };
   } catch (err) {
     log.warn("[LinuxCapture] frame decode failed:", normalizeErrorMessage(err));
