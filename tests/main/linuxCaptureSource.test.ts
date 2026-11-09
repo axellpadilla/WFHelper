@@ -10,14 +10,23 @@ import {
   setUpLinuxCapture,
 } from "../../services/linuxStreamCapture";
 
-const electronMocks = vi.hoisted(() => ({
-  BrowserWindow: vi.fn<() => unknown>(function () {
-    throw new Error("no display in tests");
-  }),
-  createFromBitmap: vi.fn((_bitmap: Buffer, _size: { width: number; height: number }) => ({
+const electronMocks = vi.hoisted(() => {
+  const resize = vi.fn((size: { width: number; height: number }) => ({
     isEmpty: () => false,
-  })),
-}));
+    getSize: () => size,
+  }));
+  return {
+    BrowserWindow: vi.fn<() => unknown>(function () {
+      throw new Error("no display in tests");
+    }),
+    resize,
+    createFromBitmap: vi.fn((_bitmap: Buffer, size: { width: number; height: number }) => ({
+      isEmpty: () => false,
+      getSize: () => size,
+      resize,
+    })),
+  };
+});
 
 vi.mock("electron", () => ({
   app: { getAppPath: () => "/app" },
@@ -361,6 +370,7 @@ describe("screen copy capture", () => {
     screenCopy.copyOutput.mockReset();
     electronMocks.BrowserWindow.mockClear();
     electronMocks.createFromBitmap.mockClear();
+    electronMocks.resize.mockClear();
     setState({ requester: null, cooldownUntil: 0, disposed: false });
   });
 
@@ -384,6 +394,29 @@ describe("screen copy capture", () => {
       height: 1,
     });
     expect(electronMocks.BrowserWindow).not.toHaveBeenCalled();
+  });
+
+  it("caps a monitor copy above 1080p before the scanners see it", async () => {
+    screenCopy.available = true;
+    screenCopy.outputs = ["DP-1"];
+    screenCopy.copyOutput.mockResolvedValue({
+      width: 2400,
+      height: 1350,
+      bitmap: Buffer.alloc(2400 * 1350 * 4),
+    });
+
+    const frame = await captureLinuxStreamFrame();
+
+    expect(electronMocks.createFromBitmap).toHaveBeenCalledWith(expect.any(Buffer), {
+      width: 2400,
+      height: 1350,
+    });
+    expect(electronMocks.resize).toHaveBeenCalledWith({
+      width: 1920,
+      height: 1080,
+      quality: "good",
+    });
+    expect(frame?.origin).toEqual({ kind: "screen-copy", output: "DP-1" });
   });
 
   it("takes the first monitor when the game's cannot be told", async () => {

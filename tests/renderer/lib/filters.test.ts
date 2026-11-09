@@ -119,7 +119,7 @@ describe("shared filters", () => {
     expect(matchesSharedFilters(item, { ...filters, masteredMode: "not_mastered" })).toBe(false);
   });
 
-  it("filters inventory item mastery independently from parent mastery", () => {
+  it("filters item mastery independently from parent mastery", () => {
     const items = [
       { name: "Mastered item", status: "mastered", parentMastered: false },
       { name: "Unmastered item", status: "unmastered", parentMastered: false },
@@ -435,7 +435,11 @@ describe("filter control registry", () => {
       }
     }
     expect(FILTER_CONTROL_SUPPORT.inventory).toContain("minDucats");
-    expect(FILTER_CONTROL_SUPPORT.inventory).toContain("mastery");
+    // The inventory bar uses parent mastery; the item-mastery selector stays on
+    // the scopes whose rows carry mastery status.
+    expect(FILTER_CONTROL_SUPPORT.inventory).not.toContain("mastery");
+    expect(FILTER_CONTROL_SUPPORT.mastery).toContain("mastery");
+    expect(FILTER_CONTROL_SUPPORT.foundry).toContain("mastery");
   });
 });
 

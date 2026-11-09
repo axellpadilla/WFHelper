@@ -22,6 +22,7 @@ import {
 import { compositorGameRect, detectCompositor } from "./waylandCompositor";
 import { waylandGameBounds } from "./waylandGameWindow";
 import { detectGameContentRect } from "./rewardScannerImage";
+import { capCaptureSize, scaleCaptureRect } from "./captureSize";
 import { normalizeErrorMessage } from "../config/shared/errors";
 
 const log = withScope("screenCapture");
@@ -99,9 +100,19 @@ async function captureWin32Gdi(preferredDisplayId?: string | null): Promise<Capt
     height: gdiResult.height,
   });
   if (!img || img.isEmpty()) return null;
+  const capped = capCaptureSize(gdiResult.width, gdiResult.height);
+  if (capped.width !== gdiResult.width || capped.height !== gdiResult.height) {
+    log.info(
+      `[ScreenCapture] capped GDI capture ${gdiResult.width}x${gdiResult.height} -> ` +
+        `${capped.width}x${capped.height}`,
+    );
+    img = img.resize({ width: capped.width, height: capped.height, quality: "good" });
+  }
+  const imageSize = img.getSize();
   // Crop windowed captures so layout ratios exclude desktop and window chrome.
   let sourceType: CaptureResult["sourceType"] = "screen";
   if (gameRect) {
+    // The rect is in native screen pixels, which the frame may no longer match.
     const ox = gameRect.x - gdiResult.originX;
     const oy = gameRect.y - gdiResult.originY;
     const x = Math.max(0, ox);
@@ -111,9 +122,20 @@ async function captureWin32Gdi(preferredDisplayId?: string | null): Promise<Capt
     const isSubRegion =
       width < gdiResult.width - EDGE_SLACK_PX || height < gdiResult.height - EDGE_SLACK_PX;
     if (isSubRegion && width >= MIN_CONTENT_WIDTH_PX && height >= MIN_CONTENT_HEIGHT_PX) {
-      img = img.crop({ x, y, width, height });
+      const crop = scaleCaptureRect(
+        { x, y, width, height },
+        { width: gdiResult.width, height: gdiResult.height },
+        imageSize,
+      );
+      const cropX = Math.min(Math.max(0, imageSize.width - 1), crop.x);
+      const cropY = Math.min(Math.max(0, imageSize.height - 1), crop.y);
+      const cropW = Math.max(1, Math.min(imageSize.width - cropX, crop.width));
+      const cropH = Math.max(1, Math.min(imageSize.height - cropY, crop.height));
+      img = img.crop({ x: cropX, y: cropY, width: cropW, height: cropH });
       sourceType = "window";
-      log.info(`[ScreenCapture] cropped to Warframe client rect ${width}x${height} at (${x},${y})`);
+      log.info(
+        `[ScreenCapture] cropped to Warframe client rect ${cropW}x${cropH} at (${cropX},${cropY})`,
+      );
     }
   }
   return {
@@ -453,12 +475,20 @@ async function captureDesktopCapturer(
     const target =
       (wanted && displays.find((d) => String(d.id) === wanted)) || screen.getPrimaryDisplay();
     const scale = target.scaleFactor || 1;
+    const nativeSize = {
+      width: Math.round(target.size.width * scale),
+      height: Math.round(target.size.height * scale),
+    };
+    const thumbnailSize = capCaptureSize(nativeSize.width, nativeSize.height);
+    if (thumbnailSize.width !== nativeSize.width || thumbnailSize.height !== nativeSize.height) {
+      noteOnce(
+        `capture capped ${nativeSize.width}x${nativeSize.height} -> ` +
+          `${thumbnailSize.width}x${thumbnailSize.height}`,
+      );
+    }
     const sources = await desktopCapturer.getSources({
       types: ["screen"],
-      thumbnailSize: {
-        width: Math.round(target.size.width * scale),
-        height: Math.round(target.size.height * scale),
-      },
+      thumbnailSize,
     });
     const source = sources.find((s) => s.display_id === String(target.id)) || sources[0];
     if (!source || source.thumbnail.isEmpty()) return null;

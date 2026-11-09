@@ -1,5 +1,6 @@
 import { derived, writable, type Readable } from "svelte/store";
 import { readStoredJson, writeStorage } from "../lib/persistence.js";
+import { FILTER_CONTROL_SUPPORT } from "../lib/filters.js";
 import type { FilterScope, SharedFiltersState } from "../types/filters.js";
 
 const STORAGE_KEY = "wfhelper:sharedFilters:v1";
@@ -61,7 +62,14 @@ function normalizeSharedFiltersByScope(value: unknown): Record<FilterScope, Shar
 
     // Search is intentionally ephemeral: a stale query must never hide items after startup.
     if (isOneOf(saved.primeMode, PRIME_MODES)) next.primeMode = saved.primeMode;
-    if (isOneOf(saved.masteredMode, MASTERED_MODES)) next.masteredMode = saved.masteredMode;
+    // Only keep a masteredMode when the scope still renders that control; a value
+    // saved before the inventory selector was removed would filter invisibly.
+    if (
+      FILTER_CONTROL_SUPPORT[scope].includes("mastery") &&
+      isOneOf(saved.masteredMode, MASTERED_MODES)
+    ) {
+      next.masteredMode = saved.masteredMode;
+    }
     if (isOneOf(saved.sortBy, SORT_KEYS)) next.sortBy = saved.sortBy;
     if (saved.sortDirection === "asc" || saved.sortDirection === "desc") {
       next.sortDirection = saved.sortDirection;

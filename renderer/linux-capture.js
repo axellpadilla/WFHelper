@@ -4,6 +4,24 @@
 (function () {
   "use strict";
 
+  // A 4K share costs four times the pixels in the transfer and every later
+  // copy. The scanners never read more than 1080p (reward titles cap their OCR
+  // strip at 720 px), so cap the canvas here as well.
+  const CAPTURE_MAX_WIDTH = 1920;
+  const CAPTURE_MAX_HEIGHT = 1080;
+
+  function capCaptureSize(width, height) {
+    if (!(width > 0) || !(height > 0)) return { width: 1, height: 1 };
+    if (width <= CAPTURE_MAX_WIDTH && height <= CAPTURE_MAX_HEIGHT) {
+      return { width, height };
+    }
+    const scale = Math.min(CAPTURE_MAX_WIDTH / width, CAPTURE_MAX_HEIGHT / height);
+    return {
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale)),
+    };
+  }
+
   const video = document.getElementById("v");
   const canvas = document.createElement("canvas");
   let state = "idle";
@@ -21,7 +39,9 @@
       stream = await navigator.mediaDevices.getDisplayMedia({
         audio: false,
         // Low frame rate keeps compositor/CPU cost negligible; grabs always
-        // read the most recent frame.
+        // read the most recent frame. The size cap lives in __grabFrame: a
+        // compositor that honoured width/height here could letterbox the
+        // stream, and frame-space mapping assumes the whole frame is the output.
         video: { frameRate: { ideal: 10, max: 15 } },
       });
       const track = stream.getVideoTracks()[0];
@@ -58,13 +78,14 @@
   // is the main unknown on Linux, and main logs this split when one shows up.
   window.__grabFrame = function () {
     if (state !== "live" || !video.videoWidth || !video.videoHeight) return null;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const target = capCaptureSize(video.videoWidth, video.videoHeight);
+    canvas.width = target.width;
+    canvas.height = target.height;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
 
     const started = performance.now();
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, 0, 0, target.width, target.height);
     const drawn = performance.now();
     const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const read = performance.now();
