@@ -158,10 +158,24 @@ function entrySchema(path: string): string {
 
 export type GsettingsExec = (args: string[]) => string;
 
+/** The AppImage prepends its mount to GLib's schema/library paths. A system
+ *  `gsettings` inheriting those can miss the desktop schemas or load the
+ *  bundle's libraries, so spawn it with the AppImage overrides removed. */
+function systemChildEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.LD_LIBRARY_PATH;
+  delete env.LD_PRELOAD;
+  delete env.GSETTINGS_SCHEMA_DIR;
+  delete env.GIO_MODULE_DIR;
+  delete env.GI_TYPELIB_PATH;
+  return env;
+}
+
 function defaultExec(args: string[]): string {
   return execFileSync("gsettings", args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    env: systemChildEnv(),
   }).trim();
 }
 
@@ -177,7 +191,8 @@ export interface GnomeNativeShortcutsOptions {
 
 function defaultHasGdbus(): boolean {
   try {
-    execFileSync("gdbus", ["--version"], { stdio: "ignore" });
+    // gdbus has no --version flag; `help` exits 0 and needs no bus.
+    execFileSync("gdbus", ["help"], { stdio: "ignore", env: systemChildEnv() });
     return true;
   } catch {
     return false;
@@ -301,7 +316,11 @@ export function createGnomeNativeShortcuts(
   }
 
   function removeEntry(shortcut: RegisteredShortcut): void {
-    removePath(shortcut.path);
+    try {
+      removePath(shortcut.path);
+    } catch (err) {
+      options.log.warn("[GnomeShortcuts] shortcut path removal failed:", errorText(err));
+    }
     try {
       resetEntry(shortcut.path);
     } catch (err) {
