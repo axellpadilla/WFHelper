@@ -294,7 +294,7 @@ function loadNativeBindings(log: Logger): XdgGlobalShortcutsBindings {
     for (const shortcut of shortcuts) {
       const triggerType = gVariantTypeNew("as");
       const triggerBuilder = gVariantBuilderNew(triggerType);
-      gVariantBuilderAdd(triggerBuilder, "s", gnomeTrigger(shortcut.trigger));
+      gVariantBuilderAdd(triggerBuilder, "s", "str", gnomeTrigger(shortcut.trigger));
       const triggers = gVariantBuilderEnd(triggerBuilder);
       gVariantBuilderUnref(triggerBuilder);
       const options = variantDictOfVariants({
