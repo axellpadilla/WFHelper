@@ -989,6 +989,46 @@ describe("keep-mapped presentation mode (Windows and native Wayland)", () => {
     ]);
   });
 
+  it("re-asserts interactive input after a rebuild is mapped", async () => {
+    vi.useFakeTimers();
+    const { controller, windows } = createPresentationProbe({
+      platform: "linux",
+      nativeWayland: false,
+    });
+
+    controller.createOverlayWindow();
+    controller.markRendererReady(1);
+    controller.setOverlayInteractiveMode(true, { focus: true });
+
+    const fresh = windows[1];
+    fresh.setIgnoreMouseEvents.mockClear();
+    fresh.focus.mockClear();
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(fresh.setIgnoreMouseEvents).toHaveBeenCalledWith(false);
+    expect(fresh.focus).toHaveBeenCalled();
+  });
+
+  it("does not re-focus a rebuilt window that went passive before the map", async () => {
+    vi.useFakeTimers();
+    const { controller, windows } = createPresentationProbe({
+      platform: "linux",
+      nativeWayland: false,
+    });
+
+    controller.createOverlayWindow();
+    controller.markRendererReady(1);
+    controller.setOverlayInteractiveMode(true, { focus: true });
+    const fresh = windows[1];
+    controller.setOverlayInteractiveMode(false);
+    fresh.focus.mockClear();
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(fresh.focus).not.toHaveBeenCalled();
+  });
+
   it("shows an interactive linux window again without a rebuild", () => {
     const { controller, windows, ctx } = createPresentationProbe({
       platform: "linux",

@@ -692,6 +692,27 @@ export function createOverlayWindowsController(options: OverlayWindowsController
     }, 0);
     for (const [channel, payload] of replay) sendOverlayEvent(channel, payload);
     if (autoHideWasPending) scheduleOverlayAutoHide(lastAutoHideDelayMs);
+
+    // The fresh window maps after this tick, so an input-shape change issued now
+    // lands before the map and is lost exactly like the passive shape. Re-apply
+    // once it is up, unless the mode or window changed in the meantime.
+    let reassertLogged = false;
+    const reassertInteractiveInput = (): void => {
+      const current = readOverlayWindow();
+      if (!current || current.isDestroyed() || current !== freshWindow) return;
+      if (!readInteractiveMode() || !isOverlayWindowVisible()) return;
+      applyOverlayInputState(current, true, true);
+      keepOverlayAboveGame(current);
+      current.moveTop();
+      current.focus();
+      if (reassertLogged) return;
+      reassertLogged = true;
+      log.info(`[OverlayWindow] ${windowLabel} interactive input re-asserted after rebuild`);
+    };
+    freshWindow.webContents.once("did-finish-load", reassertInteractiveInput);
+    for (const delay of CLICK_THROUGH_REASSERT_DELAYS_MS) {
+      setTimeout(reassertInteractiveInput, delay);
+    }
   }
 
   // An immediate raise can lose the race against the map.
