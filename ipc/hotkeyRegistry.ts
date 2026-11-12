@@ -13,9 +13,14 @@ import {
 } from "../services/launchArgs";
 import { createKeyHookShortcut } from "../services/keyHookShortcut";
 import { withScope } from "../services/logger";
+import { createGnomeNativeShortcuts, isGnomeSession } from "../services/gnomeNativeShortcuts";
 import { createXdgGlobalShortcutsPortal } from "../services/xdgGlobalShortcutsPortal";
 
 const log = withScope("hotkeyRegistry");
+
+const WAYLAND_SESSION = Boolean(
+  process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === "wayland",
+);
 
 export const overlayHotkeyBackend =
   process.env.WFHELPER_DISABLE_KEYBOARD_HOOK === "1"
@@ -50,10 +55,14 @@ export const overlayHotkeyBackend =
               });
             },
           })
-        : process.platform === "linux" &&
-            Boolean(process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === "wayland")
-          ? createXdgGlobalShortcutsPortal({ fallback: globalShortcut, log })
-          : globalShortcut;
+        : process.platform === "linux" && WAYLAND_SESSION && isGnomeSession(process.env)
+          ? // GNOME shows the portal's approval dialog for every new session, and
+            // a new app process is always a new session. Native custom shortcuts
+            // have no dialog and survive restarts.
+            createGnomeNativeShortcuts({ fallback: globalShortcut, log })
+          : process.platform === "linux" && WAYLAND_SESSION
+            ? createXdgGlobalShortcutsPortal({ fallback: globalShortcut, log })
+            : globalShortcut;
 
 export function disposeAppHotkeys(): void {
   if ("dispose" in overlayHotkeyBackend) overlayHotkeyBackend.dispose();

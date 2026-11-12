@@ -905,6 +905,9 @@ async function syncOverlayHotkeyGate(): Promise<void> {
     if (isOpen === _hotkeyGameActive) return;
     _hotkeyGameActive = isOpen;
     overlayIpc.setOverlayHotkeysActive(isOpen);
+    // A toast that outlives the game would otherwise keep its transient rep
+    // hotkey (F9) registered after the overlay hotkeys are released.
+    if (!isOpen) tradeNotificationIpc.hideTradeNotification();
     void wfmPresence.syncGameRunning(isOpen);
     if (isOpen && _plannerWarmArmed) warmPlannerOverlay();
   } catch {
