@@ -600,6 +600,107 @@ describe("findInventoryFile", () => {
     vi.useRealTimers();
   });
 
+  it("backs off exponentially while the watcher keeps failing", async () => {
+    vi.useFakeTimers();
+    const helper = writeValidInventory(
+      path.join(tmpDir, "userData", "api-helper", "inventory.json"),
+      "watched",
+      Date.now(),
+    );
+    const inventoryIpc = await loadModule();
+    const context = (await import("../../ipc/context")).default;
+    context.mainWindow = {
+      isDestroyed: () => false,
+      webContents: { send: vi.fn() },
+    } as never;
+
+    inventoryIpc.watchInventoryFile(helper);
+    const fail = (code?: string) =>
+      chokidarMock.callbacks.get("error")?.(
+        Object.assign(new Error("too many open files"), code ? { code } : {}),
+      );
+
+    // Attempt 1 retries after the base 2 s, not immediately.
+    fail("EMFILE");
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(2);
+
+    // Attempt 2 doubles to 4 s.
+    fail("EMFILE");
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(3);
+
+    // Attempt 3 doubles to 8 s.
+    fail("EMFILE");
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(4);
+
+    // Attempts 5+ are capped at 30 s, so a stuck quota costs one probe per 30 s.
+    fail("EMFILE");
+    await vi.advanceTimersByTimeAsync(15_999);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(5);
+    fail("EMFILE");
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(5);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(6);
+    fail("EMFILE");
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(6);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(7);
+
+    // A recovered watcher starts a clean series, so the next failure is 2 s again.
+    chokidarMock.callbacks.get("ready")?.();
+    fail("EMFILE");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(8);
+
+    vi.useRealTimers();
+  });
+
+  it("starts a fresh backoff series when the watched file changes", async () => {
+    vi.useFakeTimers();
+    const first = writeValidInventory(
+      path.join(tmpDir, "userData", "api-helper", "inventory.json"),
+      "first",
+      Date.now(),
+    );
+    const second = writeValidInventory(
+      path.join(tmpDir, "downloads", "inventory.json"),
+      "second",
+      Date.now(),
+    );
+    const inventoryIpc = await loadModule();
+
+    inventoryIpc.watchInventoryFile(first);
+    const fail = () => chokidarMock.callbacks.get("error")?.(new Error("permission denied"));
+    fail();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(2);
+    // Second failure in the same series takes the doubled 4 s delay.
+    fail();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(chokidarMock.watch).toHaveBeenCalledTimes(3);
+
+    inventoryIpc.watchInventoryFile(second);
+    const before = chokidarMock.watch.mock.calls.length;
+    // A new file resets the series, so the next failure waits the base 2 s.
+    fail();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(chokidarMock.watch.mock.calls.length).toBe(before + 1);
+
+    vi.useRealTimers();
+  });
+
   async function registerExport(): Promise<{
     inventoryIpc: typeof import("../../ipc/inventoryIpc");
     exportInventory: () => Promise<unknown>;
