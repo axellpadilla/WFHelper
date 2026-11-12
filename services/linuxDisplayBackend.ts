@@ -153,6 +153,12 @@ export function isNativeWayland(): boolean {
   return _waylandSession && _active !== "x11";
 }
 
+/** Wayland session with X11 windows: the compositor routes pointer input by focus,
+ *  so an overlay takes the game's focus to take clicks. */
+export function usesXWayland(): boolean {
+  return _waylandSession && _active === "x11";
+}
+
 /** The screen comes straight from a compositor that offers screen copy, once the
  *  startup probe found it. The addon opens its own Wayland connection, so this
  *  holds in XWayland mode too. */

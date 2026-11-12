@@ -105,6 +105,9 @@ const rivenWindowBaseOptions = {
   hasShadow: false,
   onWindowCreated: onRivenWindowCreated,
   onPresentationEnd: () => resetRivenInteractionWhenIdle(),
+  onInteractiveFocusLost: () => {
+    if (_rivenInteractive) setRivenInteractiveMode(false);
+  },
   canRaise: canRaiseOverlayWindows,
 };
 
