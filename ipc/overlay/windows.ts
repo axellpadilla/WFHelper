@@ -6,6 +6,7 @@ import { REWARD_OVERLAY_CANVAS } from "../../config/shared/rewardOverlayLayout";
 import {
   isNativeWayland as linuxIsNativeWayland,
   isTilingCompositor as linuxIsTilingCompositor,
+  usesXWayland as linuxUsesXWayland,
 } from "../../services/linuxDisplayBackend";
 import {
   CLICK_THROUGH_REASSERT_DELAYS_MS,
@@ -129,9 +130,12 @@ type OverlayWindowsControllerOptions = {
   onWindowCreated?: (window: import("electron").BrowserWindow) => void;
   /** A shown overlay was hidden for good; unfocus and transient hides do not count. */
   onPresentationEnd?: () => void;
+  /** The interactive overlay lost the focus it needed for clicks. */
+  onInteractiveFocusLost?: () => void;
   canRaise?: () => boolean;
   platform?: NodeJS.Platform;
   isNativeWayland?: () => boolean;
+  isXWayland?: () => boolean;
   isTilingCompositor?: () => boolean;
   placeOnGameOutput?: (title: string, output: string | null) => Promise<boolean>;
   createPresentation?: (
@@ -222,9 +226,11 @@ export function createOverlayWindowsController(options: OverlayWindowsController
     neverClickThrough = false,
     onWindowCreated,
     onPresentationEnd,
+    onInteractiveFocusLost = () => {},
     canRaise = () => true,
     platform = process.platform,
     isNativeWayland = linuxIsNativeWayland,
+    isXWayland = linuxUsesXWayland,
     isTilingCompositor = linuxIsTilingCompositor,
     placeOnGameOutput = placeWindowOnGameOutput,
     createPresentation = defaultPresentationFactory,
@@ -233,6 +239,12 @@ export function createOverlayWindowsController(options: OverlayWindowsController
   // Linux overlays are always transparent: only a transparent window can be blanked
   // instead of unmapped, and each map steals game focus on native Wayland.
   const transparentWindow = transparent || platform === "linux";
+
+  /** XWayland routes pointer input by focus, so an overlay needs the game's focus to
+   *  take clicks; every other platform does not. */
+  function xwaylandInputSession(): boolean {
+    return platform === "linux" && isXWayland();
+  }
   const resizeMinWidth = Math.round(Math.min(windowWidth * 0.75, 240));
   const resizeMinHeight = Math.round(Math.min(windowHeight * 0.75, 100));
 
@@ -847,7 +859,10 @@ export function createOverlayWindowsController(options: OverlayWindowsController
       alwaysOnTop: true,
       skipTaskbar: true,
       resizable: true,
-      focusable: false,
+      // An XWayland overlay created unfocusable is override-redirect and can never
+      // take focus later, and Mutter only routes pointer input to the focused X11
+      // surface, so focus is the only way to get clicks.
+      focusable: xwaylandInputSession() && readInteractiveMode(),
       hasShadow,
       webPreferences: {
         preload: getElectronBuildFile(preloadFileName),
@@ -943,6 +958,13 @@ export function createOverlayWindowsController(options: OverlayWindowsController
     if (!isLayerMode()) attachBoundsPersistence(createdWindow);
     createdWindow.on("blur", () => {
       if (createdWindow.isDestroyed() || readOverlayWindow() !== createdWindow) return;
+      if (xwaylandInputSession() && readInteractiveMode() && isOverlayWindowVisible()) {
+        // Clicking the game takes its focus back, which also takes the clicks; the
+        // overlay must drop to click-through instead of looking interactive.
+        log.info(`[OverlayWindow] ${windowLabel} lost focus in interactive mode`);
+        onInteractiveFocusLost();
+        return;
+      }
       if (isOverlayWindowVisible() && !raiseReassertPointless())
         scheduleRaiseReassert(createdWindow);
     });
@@ -1129,6 +1151,21 @@ export function createOverlayWindowsController(options: OverlayWindowsController
     if (overlayWindow.isFocusable() !== focusable) overlayWindow.setFocusable(focusable);
   }
 
+  /** XWayland only: Mutter routes pointer input to the focused X11 surface, so the
+   *  overlay must take focus to receive clicks. The game keeps running; F7 (or
+   *  clicking the overlay again) takes the focus back. */
+  function takeInteractiveFocus(overlayWindow: import("electron").BrowserWindow): void {
+    if (!xwaylandInputSession()) {
+      overlayWindow.focus();
+      return;
+    }
+    setFocusableIfChanged(overlayWindow, true);
+    keepOverlayAboveGame(overlayWindow);
+    overlayWindow.moveTop();
+    overlayWindow.show();
+    overlayWindow.focus();
+  }
+
   function setOverlayInteractiveMode(enabled: boolean, options: { focus?: boolean } = {}): void {
     writeInteractiveMode(!!enabled);
     const overlayWindow = readOverlayWindow();
@@ -1151,9 +1188,9 @@ export function createOverlayWindowsController(options: OverlayWindowsController
     if (interactive && visible && needsRebuildForInteractive()) {
       rebuildForInteractive();
       const rebuilt = readOverlayWindow();
-      if (options.focus && rebuilt && !rebuilt.isDestroyed()) {
-        applyOverlayInputState(rebuilt, isOverlayWindowVisible(), true);
-        rebuilt.focus();
+      if (rebuilt && !rebuilt.isDestroyed()) {
+        applyOverlayInputState(rebuilt, isOverlayWindowVisible(), options.focus === true);
+        if (options.focus) takeInteractiveFocus(rebuilt);
       }
       return;
     }
@@ -1178,7 +1215,7 @@ export function createOverlayWindowsController(options: OverlayWindowsController
     keepOverlayAboveGame(overlayWindow);
     overlayWindow.moveTop();
     if (interactive) {
-      if (options.focus) overlayWindow.focus();
+      if (options.focus) takeInteractiveFocus(overlayWindow);
     } else if (!isKeepMappedActive()) {
       overlayWindow.showInactive();
     }

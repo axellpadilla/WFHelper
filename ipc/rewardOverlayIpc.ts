@@ -92,6 +92,7 @@ export const rewardWindowsController = createOverlayWindowsController({
   windowStateKey: "reward",
   onWindowBoundsChanged: rememberOverlayWindowBounds,
   onPresentationEnd: () => endOverlayInteractionWhenIdle(),
+  onInteractiveFocusLost: () => resetOverlayInteraction("focus-lost"),
   canRaise: canRaiseOverlayWindows,
 });
 
@@ -120,6 +121,7 @@ export const plannerWindowsController = createOverlayWindowsController({
   windowStateKey: "planner",
   onWindowBoundsChanged: rememberOverlayWindowBounds,
   onPresentationEnd: () => endOverlayInteractionWhenIdle(),
+  onInteractiveFocusLost: () => resetOverlayInteraction("focus-lost"),
   canRaise: canRaiseOverlayWindows,
 });
 
