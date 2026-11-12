@@ -9,20 +9,29 @@ import { app, BrowserWindow, crashReporter, globalShortcut, powerMonitor } from 
 
 import * as linuxDisplay from "./services/linuxDisplayBackend";
 import { layerOutputRects, probeLayerShell } from "./services/layerShell";
-import { isOverlayActionLaunch, secondLaunchAction, startupAction } from "./services/launchArgs";
+import { secondLaunchAction, startupAction } from "./services/launchArgs";
 import { choosePasswordStore } from "./services/linuxKeyring";
 
-// An action launch skips display detection and the XWayland re-exec, so one key
-// press reaches the running instance once.
-const DISPLAY_BACKEND = isOverlayActionLaunch(process.argv)
-  ? "auto"
-  : linuxDisplay.initialize(
-      app.getPath("userData"),
-      process.env,
-      process.platform,
-      app.getVersion(),
-      process.argv,
-    );
+// Requested before anything can fork. A launch that is not the primary must
+// never spawn a second AppImage/Electron tree only to discover it has to quit,
+// and the re-exec below can hand the lock over only because we hold it first.
+const ownsInstanceLock = app.requestSingleInstanceLock();
+const startup = startupAction(process.argv, ownsInstanceLock);
+const hasSingleInstanceLock = startup === "start";
+
+// A launch that will not start (an action launch hands off, a second launch
+// quits) skips display detection entirely: the backend only matters to the
+// instance that goes on to create windows.
+const DISPLAY_BACKEND =
+  startup !== "start"
+    ? "auto"
+    : linuxDisplay.initialize(
+        app.getPath("userData"),
+        process.env,
+        process.platform,
+        app.getVersion(),
+        process.argv,
+      );
 // Ozone reads its platform before this script runs, so appendSwitch alone never
 // joins XWayland; re-exec once with the flag in argv instead.
 const OZONE_X11_ARG = "--ozone-platform=x11";
@@ -33,7 +42,7 @@ const JOINED_XWAYLAND = OZONE_PLATFORM_ARG === OZONE_X11_ARG;
 // Only a re-exec that should have happened and did not is a failure. A platform
 // the caller pinned by hand is their choice, not this machine refusing XWayland.
 const XWAYLAND_REEXEC_FAILED = DISPLAY_BACKEND === "x11" && OZONE_PLATFORM_ARG === undefined;
-if (DISPLAY_BACKEND === "x11") {
+if (startup === "start" && DISPLAY_BACKEND === "x11") {
   app.commandLine.appendSwitch("ozone-platform", "x11");
   if (!OZONE_PLATFORM_ARG) {
     // app.relaunch() is a no-op this early, and the AppImage mount dies with us.
@@ -45,6 +54,9 @@ if (DISPLAY_BACKEND === "x11") {
           detached: true,
           stdio: "inherit",
         }).unref();
+        // Only release once the child exists, so a spawn that throws leaves this
+        // process owning the lock instead of running on without it.
+        app.releaseSingleInstanceLock();
         app.exit(0);
       }
     } catch {
@@ -222,8 +234,7 @@ process.on("unhandledRejection", (reason: unknown) => {
 const MAIN_WINDOW_SHOW_GRACE_MS = 2_000;
 const MAIN_WINDOW_SHOW_DEADLINE_MS = 15_000;
 
-const startup = startupAction(process.argv, app.requestSingleInstanceLock());
-const hasSingleInstanceLock = startup === "start";
+// `startup` and `hasSingleInstanceLock` were resolved before the re-exec block.
 // Only the instance that starts pays for the bus probe; toggle and second launches exit.
 const PASSWORD_STORE = hasSingleInstanceLock
   ? choosePasswordStore(process.platform, process.argv, process.env)

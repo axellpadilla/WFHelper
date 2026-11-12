@@ -52,6 +52,21 @@ describe("main window startup", () => {
     expect(source).toMatch(/PASSWORD_STORE = hasSingleInstanceLock\s*\?\s*choosePasswordStore\(/);
   });
 
+  it("takes the single-instance lock before it may re-exec", () => {
+    const lock = source.indexOf("app.requestSingleInstanceLock()");
+    const spawnCall = source.indexOf("spawn(selfPath");
+    expect(lock).toBeGreaterThan(0);
+    // A second launch used to pay for a whole AppImage mount plus an Electron
+    // boot before discovering it had to quit; the lock has to come first.
+    expect(lock).toBeLessThan(spawnCall);
+    // A doomed launch must not even pay for the display probe.
+    expect(lock).toBeLessThan(source.indexOf("linuxDisplay.initialize("));
+    expect(source).toMatch(/startup === "start" && DISPLAY_BACKEND === "x11"/);
+    const release = source.indexOf("app.releaseSingleInstanceLock()");
+    expect(release).toBeGreaterThan(spawnCall);
+    expect(release).toBeLessThan(source.indexOf("app.exit(0)", spawnCall));
+  });
+
   it("blames only a re-exec that should have happened, not a hand-pinned platform", () => {
     expect(source).toContain(
       'const XWAYLAND_REEXEC_FAILED = DISPLAY_BACKEND === "x11" && OZONE_PLATFORM_ARG === undefined',
