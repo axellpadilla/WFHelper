@@ -112,7 +112,7 @@ export function electronAcceleratorToGnomeBinding(accelerator: string): string |
  *
  *  Deriving the slot from the canonical GNOME binding keeps `Ctrl+F8` and
  *  `Control+F8` on the same entry instead of leaving one of them orphaned. */
-export function gnomeShortcutSlot(accelerator: string): string {
+function gnomeShortcutSlot(accelerator: string): string {
   const canonical = (electronAcceleratorToGnomeBinding(accelerator) ?? accelerator)
     .replace(/[<>]/g, " ")
     .replace(/[^A-Za-z0-9]+/g, "_")
@@ -121,7 +121,7 @@ export function gnomeShortcutSlot(accelerator: string): string {
 }
 
 /** gsd runs this with `g_spawn_command_line_async`; every token is safe. */
-export function gnomeShortcutCommand(slot: string): string {
+function gnomeShortcutCommand(slot: string): string {
   return `gdbus emit --session --object-path ${SIGNAL_PATH} --signal ${SIGNAL_INTERFACE}.${SIGNAL_MEMBER} ${slot}`;
 }
 
@@ -156,7 +156,7 @@ function entrySchema(path: string): string {
   return `${CUSTOM_KEYBINDING_SCHEMA}:${path}`;
 }
 
-export type GsettingsExec = (args: string[]) => string;
+type GsettingsExec = (args: string[]) => string;
 
 /** The AppImage prepends its mount to GLib's schema/library paths. A system
  *  `gsettings` inheriting those can miss the desktop schemas or load the
@@ -179,7 +179,7 @@ function defaultExec(args: string[]): string {
   }).trim();
 }
 
-export interface GnomeNativeShortcutsOptions {
+interface GnomeNativeShortcutsOptions {
   log: Logger;
   fallback: ShortcutBackend;
   exec?: GsettingsExec;

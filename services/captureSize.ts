@@ -6,7 +6,7 @@
 export const CAPTURE_MAX_WIDTH = 1920;
 export const CAPTURE_MAX_HEIGHT = 1080;
 
-export interface CaptureSize {
+interface CaptureSize {
   width: number;
   height: number;
 }

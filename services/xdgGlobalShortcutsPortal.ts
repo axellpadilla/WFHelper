@@ -116,7 +116,7 @@ interface EnsurePortalDesktopFileOptions {
 }
 
 /** Must match `build.appId` in package.json and the desktop file basename. */
-export const PORTAL_APP_ID = "com.wfhelper.app";
+const PORTAL_APP_ID = "com.wfhelper.app";
 
 /** Spaces and shell metacharacters need the desktop-entry quoting rules. */
 function quoteDesktopExec(execPath: string): string {
