@@ -10,6 +10,7 @@ import {
   INVENTORY_OPEN_ALECA_FRAME_FILE,
   INVENTORY_GET_STATUS,
   INVENTORY_SET_SOURCE,
+  SETUP_COMPLETE,
   INVENTORY_EXPORT,
   INVENTORY_UPDATED,
   INVENTORY_STATUS_UPDATED,
@@ -207,6 +208,7 @@ try {
       INVENTORY_OPEN_ALECA_FRAME_FILE,
     ),
     getInventoryStatus: inv<"getInventoryStatus">(INVENTORY_GET_STATUS),
+    completeSetup: inv<"completeSetup">(SETUP_COMPLETE),
     setInventorySource: inv<"setInventorySource">(INVENTORY_SET_SOURCE),
     exportInventory: inv<"exportInventory">(INVENTORY_EXPORT),
 

@@ -263,6 +263,10 @@ export interface IpcInvokeMap {
     args: [source: Exclude<InventorySource, "aleca">];
     return: RawInventoryData | null;
   };
+  completeSetup: {
+    args: [];
+    return: boolean;
+  };
   setInventorySource: {
     args: [source: InventorySource];
     return: { source: InventorySource };
