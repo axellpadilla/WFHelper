@@ -9,7 +9,7 @@ import { app, BrowserWindow, crashReporter, globalShortcut, powerMonitor } from 
 
 import * as linuxDisplay from "./services/linuxDisplayBackend";
 import { layerOutputRects, probeLayerShell } from "./services/layerShell";
-import { secondLaunchAction, startupAction } from "./services/launchArgs";
+import { isOverlayActionLaunch, secondLaunchAction, startupAction } from "./services/launchArgs";
 import { choosePasswordStore } from "./services/linuxKeyring";
 
 // Requested before anything can fork. A launch that is not the primary must
@@ -19,19 +19,18 @@ const ownsInstanceLock = app.requestSingleInstanceLock();
 const startup = startupAction(process.argv, ownsInstanceLock);
 const hasSingleInstanceLock = startup === "start";
 
-// A launch that will not start (an action launch hands off, a second launch
-// quits) skips display detection entirely: the backend only matters to the
-// instance that goes on to create windows.
-const DISPLAY_BACKEND =
-  startup !== "start"
-    ? "auto"
-    : linuxDisplay.initialize(
-        app.getPath("userData"),
-        process.env,
-        process.platform,
-        app.getVersion(),
-        process.argv,
-      );
+// Action launches hand off to the running instance and second launches quit;
+// neither ever creates a window, so neither pays for a display backend.
+const willStart = startup === "start" && !isOverlayActionLaunch(process.argv);
+const DISPLAY_BACKEND = willStart
+  ? linuxDisplay.initialize(
+      app.getPath("userData"),
+      process.env,
+      process.platform,
+      app.getVersion(),
+      process.argv,
+    )
+  : "auto";
 // Ozone reads its platform before this script runs, so appendSwitch alone never
 // joins XWayland; re-exec once with the flag in argv instead.
 const OZONE_X11_ARG = "--ozone-platform=x11";
