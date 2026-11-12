@@ -175,6 +175,7 @@ import * as apiHelperRunner from "./services/apiHelperRunner";
 import * as inventorySync from "./services/inventorySync";
 import { disposeLinuxStreamCapture } from "./services/linuxStreamCapture";
 import { loadMainWindowState, saveMainWindowState } from "./services/mainWindowState";
+import * as setupState from "./services/setupState";
 import { WIN_APP_USER_MODEL_ID } from "./config/shared/appMeta";
 import {
   applyInjectionGuardForStartup,
@@ -358,8 +359,16 @@ function createWindow(): void {
   mainWindow.webContents.once("did-finish-load", () => {
     scheduleShow(MAIN_WINDOW_SHOW_GRACE_MS, "did-finish-load");
   });
+  // The gate is seeded through the URL because renderer storage cannot be trusted
+  // to survive: the main process owns setup completion.
+  const setupCompleted = setupState.isSetupCompleted(app.getPath("userData"));
   void mainWindow
-    .loadFile(MAIN_WINDOW_ENTRY_FILE, SAFE_MODE_LAUNCH ? { query: { safe: "1" } } : {})
+    .loadFile(MAIN_WINDOW_ENTRY_FILE, {
+      query: {
+        ...(SAFE_MODE_LAUNCH ? { safe: "1" } : {}),
+        setup: setupCompleted ? "1" : "0",
+      },
+    })
     .catch((error: unknown) => {
       log.error("[Main] Failed to load the renderer:", error);
       showMainWindow("load-error");

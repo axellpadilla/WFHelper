@@ -1,6 +1,7 @@
 /** All IPC channel names live here; `as const` keeps literal types. */
 
 export const INVENTORY_GET = "get-inventory";
+export const SETUP_COMPLETE = "setup:complete";
 export const INVENTORY_OPEN_FILE = "open-inventory-file";
 export const INVENTORY_OPEN_ALECA_FRAME_FILE = "open-alecaframe-inventory-file";
 export const INVENTORY_GET_STATUS = "get-inventory-status";

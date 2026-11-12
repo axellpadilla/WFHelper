@@ -6,6 +6,7 @@ import * as itemDb from "../services/itemDatabase";
 import { setGameLocale } from "../services/gameLocale";
 import * as wfmCatalog from "../services/wfmCatalog";
 import * as masteryHelper from "../services/masteryHelper";
+import * as setupState from "../services/setupState";
 import * as codexProfile from "../services/codexProfile";
 import { getInventorySource, getInventoryStatus, getLoadedInventoryHash } from "./inventoryIpc";
 import { mergeCodexInventoryScans } from "../config/shared/codexInventory";
@@ -28,6 +29,7 @@ import {
   PERSONAL_PROFILE_GET,
   PROFILE_ACCOUNT_CHANGED,
   INVENTORY_STATUS_UPDATED,
+  SETUP_COMPLETE,
   DB_GET_RELIC_DATABASE,
   DB_GET_RELIC_DATA_INFO,
   DROP_SEARCH,
@@ -105,6 +107,12 @@ function register(): void {
       }
     }
     return wfmCatalog.getRendererLookup();
+  });
+
+  handleAuthorized(SETUP_COMPLETE, assertMainRendererSender, () => {
+    const saved = setupState.markSetupCompleted(app.getPath("userData"));
+    if (!saved) log.warn("[Setup] could not persist setup completion");
+    return saved;
   });
 
   handleAuthorized(DB_GET_MASTERY, assertMainRendererSender, () => {
