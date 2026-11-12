@@ -37,8 +37,13 @@ describe("safe-mode launch flag", () => {
   });
 
   it("passes safe=1 to the renderer only when the flag is set", () => {
+    expect(source).toContain('...(SAFE_MODE_LAUNCH ? { safe: "1" } : {})');
+  });
+
+  it("passes the main-process setup gate alongside the safe-mode seed", () => {
+    expect(source).toContain('setup: setupCompleted ? "1" : "0"');
     expect(source).toContain(
-      'loadFile(MAIN_WINDOW_ENTRY_FILE, SAFE_MODE_LAUNCH ? { query: { safe: "1" } } : {})',
+      'const setupCompleted = setupState.isSetupCompleted(app.getPath("userData"))',
     );
   });
 });

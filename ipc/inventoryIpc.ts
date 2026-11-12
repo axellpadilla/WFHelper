@@ -67,6 +67,10 @@ const INVENTORY_FILENAME_RE = /^inventory(?:_[^\\/:*?"<>|]+)?\.json$/i;
 
 const INVENTORY_WATCH_STABILITY_MS = 500;
 const INVENTORY_WATCH_RETRY_MS = 2_000;
+// Doubles from the base delay to this ceiling. An exhausted inotify quota
+// (EMFILE) fails every attempt, so a fixed 2 s retry turns into a permanent
+// fleet-wide log storm instead of a slow probe for a freed slot.
+const INVENTORY_WATCH_RETRY_MAX_MS = 30_000;
 const MAX_INVENTORY_BYTES = 50 * 1024 * 1024;
 const JSON_ENCODING = "utf-8";
 
@@ -404,11 +408,30 @@ function readAlecaFrameInventory(filePath: string): unknown {
   }
 }
 
+function inventoryWatchErrorCode(error: unknown): string | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : null;
+}
+
+/** 2 s, 4 s, 8 s … up to the ceiling; attempt 1 uses the base delay. */
+function inventoryWatchRetryDelay(attempt: number): number {
+  return Math.min(
+    INVENTORY_WATCH_RETRY_MS * 2 ** Math.max(attempt - 1, 0),
+    INVENTORY_WATCH_RETRY_MAX_MS,
+  );
+}
+
 function watchInventoryFile(
   filePath: string,
   source: Exclude<InventorySource, "none"> = "helper",
+  /** Consecutive failures behind this attempt; retries pass it so the series
+   *  survives re-creating the watcher. A caller-requested watch starts at 0. */
+  attempt = 0,
 ): void {
   stopInventoryWatcher();
+  // Per-watcher, so a fresh request starts at the base delay and a stale `ready`
+  // from a closed watcher cannot reset the live one.
+  let failures = attempt;
   const generation = _watchGeneration;
   ctx.currentInventoryPath = filePath;
   _activeInventorySource = source;
@@ -461,7 +484,27 @@ function watchInventoryFile(
   watcher.on("error", (error) => {
     if (generation !== _watchGeneration) return;
     const message = normalizeErrorMessage(error);
-    log.error(`Inventory watcher failed for ${filePath}:`, message);
+    const code = inventoryWatchErrorCode(error);
+    const failure = (failures += 1);
+    const delay = inventoryWatchRetryDelay(failure);
+    // The first failure is the actionable one; repeats of a stuck condition are
+    // only worth a debug line, or one instance can fill the log on its own.
+    const line = `Inventory watcher failed for ${filePath} (attempt ${failure}):`;
+    if (failure === 1 || failure % 10 === 0) log.error(line, message);
+    else log.debug(line, message);
+    if (failure === 1) {
+      if (code === "EMFILE") {
+        log.warn(
+          "inotify instances are exhausted; raise fs.inotify.max_user_instances " +
+            "and close unused app instances.",
+        );
+      } else if (code === "ENOSPC") {
+        log.warn(
+          "inotify watches are exhausted; raise fs.inotify.max_user_watches " +
+            "and close unused app instances.",
+        );
+      }
+    }
     _lastReadError = { kind: "watch", message, path: filePath, at: Date.now() };
     notifyInventoryStatus();
 
@@ -472,13 +515,15 @@ function watchInventoryFile(
     _watchRetryTimer = setTimeout(() => {
       if (retryGeneration !== _watchGeneration) return;
       _watchRetryTimer = null;
-      watchInventoryFile(filePath, source);
-    }, INVENTORY_WATCH_RETRY_MS);
+      watchInventoryFile(filePath, source, failure);
+    }, delay);
     _watchRetryTimer.unref?.();
   });
 
   watcher.on("ready", () => {
-    if (generation !== _watchGeneration || _lastReadError?.kind !== "watch") return;
+    if (generation !== _watchGeneration) return;
+    failures = 0;
+    if (_lastReadError?.kind !== "watch") return;
     _lastReadError = null;
     notifyInventoryStatus();
   });

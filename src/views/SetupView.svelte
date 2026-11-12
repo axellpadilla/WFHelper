@@ -266,6 +266,9 @@
   }
 
   function completeSetup(nextView: "inventory" | "world" = "inventory"): void {
+    // The main process owns the relaunch gate; renderer keys stay as a downgrade
+    // safety net, not as the thing the next launch trusts.
+    void invoke("completeSetup").catch(() => {});
     writeStorage(SETUP_COMPLETED_KEY, "1");
     // legacy key: a downgrade to a pre-v2 build must not re-run setup either
     writeStorage("setup-completed", "1");

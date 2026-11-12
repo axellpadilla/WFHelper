@@ -12,17 +12,25 @@ import { layerOutputRects, probeLayerShell } from "./services/layerShell";
 import { isOverlayActionLaunch, secondLaunchAction, startupAction } from "./services/launchArgs";
 import { choosePasswordStore } from "./services/linuxKeyring";
 
-// An action launch skips display detection and the XWayland re-exec, so one key
-// press reaches the running instance once.
-const DISPLAY_BACKEND = isOverlayActionLaunch(process.argv)
-  ? "auto"
-  : linuxDisplay.initialize(
+// Requested before anything can fork. A launch that is not the primary must
+// never spawn a second AppImage/Electron tree only to discover it has to quit,
+// and the re-exec below can hand the lock over only because we hold it first.
+const ownsInstanceLock = app.requestSingleInstanceLock();
+const startup = startupAction(process.argv, ownsInstanceLock);
+const hasSingleInstanceLock = startup === "start";
+
+// Action launches hand off to the running instance and second launches quit;
+// neither ever creates a window, so neither pays for a display backend.
+const willStart = startup === "start" && !isOverlayActionLaunch(process.argv);
+const DISPLAY_BACKEND = willStart
+  ? linuxDisplay.initialize(
       app.getPath("userData"),
       process.env,
       process.platform,
       app.getVersion(),
       process.argv,
-    );
+    )
+  : "auto";
 // Ozone reads its platform before this script runs, so appendSwitch alone never
 // joins XWayland; re-exec once with the flag in argv instead.
 const OZONE_X11_ARG = "--ozone-platform=x11";
@@ -33,7 +41,7 @@ const JOINED_XWAYLAND = OZONE_PLATFORM_ARG === OZONE_X11_ARG;
 // Only a re-exec that should have happened and did not is a failure. A platform
 // the caller pinned by hand is their choice, not this machine refusing XWayland.
 const XWAYLAND_REEXEC_FAILED = DISPLAY_BACKEND === "x11" && OZONE_PLATFORM_ARG === undefined;
-if (DISPLAY_BACKEND === "x11") {
+if (startup === "start" && DISPLAY_BACKEND === "x11") {
   app.commandLine.appendSwitch("ozone-platform", "x11");
   if (!OZONE_PLATFORM_ARG) {
     // app.relaunch() is a no-op this early, and the AppImage mount dies with us.
@@ -45,6 +53,9 @@ if (DISPLAY_BACKEND === "x11") {
           detached: true,
           stdio: "inherit",
         }).unref();
+        // Only release once the child exists, so a spawn that throws leaves this
+        // process owning the lock instead of running on without it.
+        app.releaseSingleInstanceLock();
         app.exit(0);
       }
     } catch {
@@ -164,6 +175,7 @@ import * as apiHelperRunner from "./services/apiHelperRunner";
 import * as inventorySync from "./services/inventorySync";
 import { disposeLinuxStreamCapture } from "./services/linuxStreamCapture";
 import { loadMainWindowState, saveMainWindowState } from "./services/mainWindowState";
+import * as setupState from "./services/setupState";
 import { WIN_APP_USER_MODEL_ID } from "./config/shared/appMeta";
 import {
   applyInjectionGuardForStartup,
@@ -222,8 +234,7 @@ process.on("unhandledRejection", (reason: unknown) => {
 const MAIN_WINDOW_SHOW_GRACE_MS = 2_000;
 const MAIN_WINDOW_SHOW_DEADLINE_MS = 15_000;
 
-const startup = startupAction(process.argv, app.requestSingleInstanceLock());
-const hasSingleInstanceLock = startup === "start";
+// `startup` and `hasSingleInstanceLock` were resolved before the re-exec block.
 // Only the instance that starts pays for the bus probe; toggle and second launches exit.
 const PASSWORD_STORE = hasSingleInstanceLock
   ? choosePasswordStore(process.platform, process.argv, process.env)
@@ -348,8 +359,16 @@ function createWindow(): void {
   mainWindow.webContents.once("did-finish-load", () => {
     scheduleShow(MAIN_WINDOW_SHOW_GRACE_MS, "did-finish-load");
   });
+  // The gate is seeded through the URL because renderer storage cannot be trusted
+  // to survive: the main process owns setup completion.
+  const setupCompleted = setupState.isSetupCompleted(app.getPath("userData"));
   void mainWindow
-    .loadFile(MAIN_WINDOW_ENTRY_FILE, SAFE_MODE_LAUNCH ? { query: { safe: "1" } } : {})
+    .loadFile(MAIN_WINDOW_ENTRY_FILE, {
+      query: {
+        ...(SAFE_MODE_LAUNCH ? { safe: "1" } : {}),
+        setup: setupCompleted ? "1" : "0",
+      },
+    })
     .catch((error: unknown) => {
       log.error("[Main] Failed to load the renderer:", error);
       showMainWindow("load-error");

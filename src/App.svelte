@@ -18,7 +18,7 @@
 
   import ModalHost from "./components/ModalHost.svelte";
 
-  import { currentView, SETUP_COMPLETED_KEY, statusText } from "./stores/app.js";
+  import { currentView, isSetupCompleted, SETUP_COMPLETED_KEY, statusText } from "./stores/app.js";
   import { parsedItems } from "./stores/data.js";
   import {
     isPopoutWindow,
@@ -98,13 +98,17 @@
     // own smaller export would shrink them.
     const startup = initStartup({ ownsSharedCaches: !isPopoutWindow });
 
+    // A v2 key from an older build is the one proof of completion the main process
+    // cannot read, so copy it over; later launches no longer depend on this storage.
+    if (localStorage.getItem(SETUP_COMPLETED_KEY) === "1") {
+      void invoke("completeSetup").catch(() => {});
+    }
+
     if (popoutRoute) {
       currentView.set(popoutRoute);
     } else if (popoutSectionId) {
       // PopoutSectionHost mounts the owning view itself, so the router stays out.
-    } else if (localStorage.getItem(SETUP_COMPLETED_KEY) !== "1") {
-      // Match the exact-"1" check used in stores/app.ts so any future
-      // non-"1" leftover value is treated consistently.
+    } else if (!isSetupCompleted()) {
       currentView.set("setup");
     } else {
       void reopenSetupWhenInventoryIsUnavailable();

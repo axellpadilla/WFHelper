@@ -304,6 +304,7 @@ describe("first-load zoom", () => {
 function createPresentationProbe(options: {
   platform: typeof process.platform;
   nativeWayland: boolean;
+  xwayland?: boolean;
   transparent?: boolean;
   neverClickThrough?: boolean;
   tiling?: boolean;
@@ -315,6 +316,7 @@ function createPresentationProbe(options: {
   onWindowBoundsChanged?: (key: OverlayWindowKey, bounds: OverlaySavedWindowBounds) => void;
   canRaise?: () => boolean;
   onPresentationEnd?: () => void;
+  onInteractiveFocusLost?: () => void;
 }) {
   const display = {
     id: 1,
@@ -411,6 +413,7 @@ function createPresentationProbe(options: {
     neverClickThrough: options.neverClickThrough === true,
     platform: options.platform,
     isNativeWayland: () => options.nativeWayland,
+    isXWayland: () => options.xwayland === true,
     isTilingCompositor: () => options.tiling === true,
     windowTitle: options.windowTitle,
     placeOnGameOutput: options.placeOnGameOutput,
@@ -420,6 +423,7 @@ function createPresentationProbe(options: {
     onWindowBoundsChanged: options.onWindowBoundsChanged,
     canRaise: options.canRaise,
     onPresentationEnd: options.onPresentationEnd,
+    onInteractiveFocusLost: options.onInteractiveFocusLost,
   });
 
   const contentEvents = (win: FakePresentationWindow) =>
@@ -987,6 +991,81 @@ describe("keep-mapped presentation mode (Windows and native Wayland)", () => {
     expect(fresh.webContents.send).toHaveBeenCalledWith("relic-reward-items", [
       { name: "Forma Blueprint" },
     ]);
+  });
+
+  it("re-asserts interactive input after a rebuild is mapped", async () => {
+    vi.useFakeTimers();
+    const { controller, windows } = createPresentationProbe({
+      platform: "linux",
+      nativeWayland: false,
+    });
+
+    controller.createOverlayWindow();
+    controller.markRendererReady(1);
+    controller.setOverlayInteractiveMode(true, { focus: true });
+
+    const fresh = windows[1];
+    fresh.setIgnoreMouseEvents.mockClear();
+    fresh.focus.mockClear();
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(fresh.setIgnoreMouseEvents).toHaveBeenCalledWith(false);
+    expect(fresh.focus).toHaveBeenCalled();
+  });
+
+  it("does not re-focus a rebuilt window that went passive before the map", async () => {
+    vi.useFakeTimers();
+    const { controller, windows } = createPresentationProbe({
+      platform: "linux",
+      nativeWayland: false,
+    });
+
+    controller.createOverlayWindow();
+    controller.markRendererReady(1);
+    controller.setOverlayInteractiveMode(true, { focus: true });
+    const fresh = windows[1];
+    controller.setOverlayInteractiveMode(false);
+    fresh.focus.mockClear();
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(fresh.focus).not.toHaveBeenCalled();
+  });
+
+  it("takes focus once when an xwayland overlay goes interactive", () => {
+    const { controller, windows } = createPresentationProbe({
+      platform: "linux",
+      nativeWayland: false,
+      xwayland: true,
+    });
+
+    controller.createOverlayWindow();
+    controller.markRendererReady(1);
+    controller.setOverlayInteractiveMode(true, { focus: true });
+
+    const win = windows.at(-1)!;
+    expect(win.focus).toHaveBeenCalled();
+    expect(win.isFocusable()).toBe(true);
+  });
+
+  it("drops to passive when the interactive overlay loses focus", () => {
+    const lostFocus = vi.fn();
+    const { controller, windows } = createPresentationProbe({
+      platform: "linux",
+      nativeWayland: false,
+      xwayland: true,
+      onInteractiveFocusLost: lostFocus,
+    });
+
+    controller.createOverlayWindow();
+    controller.markRendererReady(1);
+    controller.setOverlayInteractiveMode(true, { focus: true });
+    const win = windows.at(-1)!;
+
+    fireWindowEvent(win, "blur");
+
+    expect(lostFocus).toHaveBeenCalled();
   });
 
   it("shows an interactive linux window again without a rebuild", () => {
