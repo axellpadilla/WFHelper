@@ -78,7 +78,9 @@ function normalizeSharedFiltersByScope(value: unknown): Record<FilterScope, Shar
     if (isOneOf(saved.orderPlaced, YES_NO_MODES)) next.orderPlaced = saved.orderPlaced;
     if (isOneOf(saved.mastered, YES_NO_MODES)) next.mastered = saved.mastered;
     if (isOneOf(saved.spares, YES_NO_MODES)) next.spares = saved.spares;
-    if (isOneOf(saved.junk, YES_NO_MODES)) next.junk = saved.junk;
+    if (typeof saved.minimumJunk === "number" && Number.isFinite(saved.minimumJunk)) {
+      next.minimumJunk = Math.max(0, Math.min(100, Math.floor(saved.minimumJunk)));
+    }
     if (isOneOf(saved.vaulted, YES_NO_MODES)) next.vaulted = saved.vaulted;
     if (isOneOf(saved.partType, PART_TYPE_MODES)) next.partType = saved.partType;
     if (isOneOf(saved.favorite, YES_NO_MODES)) next.favorite = saved.favorite;
@@ -88,6 +90,9 @@ function normalizeSharedFiltersByScope(value: unknown): Record<FilterScope, Shar
     if (isOneOf(saved.foundryState, FOUNDRY_STATE_MODES)) next.foundryState = saved.foundryState;
     if (typeof saved.minimumPlatinum === "number" && Number.isFinite(saved.minimumPlatinum)) {
       next.minimumPlatinum = Math.max(0, Math.min(1_000_000, Math.floor(saved.minimumPlatinum)));
+    }
+    if (typeof saved.maximumPlatinum === "number" && Number.isFinite(saved.maximumPlatinum)) {
+      next.maximumPlatinum = Math.max(0, Math.min(1_000_000, Math.floor(saved.maximumPlatinum)));
     }
     if (typeof saved.minimumDucats === "number" && Number.isFinite(saved.minimumDucats)) {
       next.minimumDucats = Math.max(0, Math.min(1_000_000, Math.floor(saved.minimumDucats)));
@@ -132,11 +137,12 @@ function createDefaultSharedFiltersState(): SharedFiltersState {
     orderPlaced: "all",
     mastered: "all",
     spares: "all",
-    junk: "all",
+    minimumJunk: 0,
     vaulted: "all",
     partType: "all",
     favorite: "all",
     minimumPlatinum: 0,
+    maximumPlatinum: 0,
     minimumDucats: 0,
     minimumAmount: 0,
     equipped: "all",

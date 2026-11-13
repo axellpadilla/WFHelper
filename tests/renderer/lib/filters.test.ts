@@ -24,11 +24,12 @@ function defaultFilters(): SharedFiltersState {
     orderPlaced: "all",
     mastered: "all",
     spares: "all",
-    junk: "all",
+    minimumJunk: 0,
     vaulted: "all",
     partType: "all",
     favorite: "all",
     minimumPlatinum: 0,
+    maximumPlatinum: 0,
     minimumDucats: 0,
     minimumAmount: 0,
     equipped: "all",
@@ -468,13 +469,13 @@ describe("defaultSortDirection", () => {
 
 describe("junk sort and filter", () => {
   const rows = [
-    { name: "Keep", junk: false, junkRank: null, junkTie: null, junkCopies: 0 },
-    { name: "Valuable", junk: false, junkRank: 1, junkTie: 80, junkCopies: 1 },
-    { name: "Cheap", junk: true, junkRank: 2, junkTie: 5, junkCopies: 2 },
-    { name: "Chaff", junk: true, junkRank: 3, junkTie: null, junkCopies: 3 },
+    { name: "Keep", junkScore: 0, junkCopies: 0 },
+    { name: "Valuable", junkScore: 25, junkCopies: 1 },
+    { name: "Cheap", junkScore: 60, junkCopies: 2 },
+    { name: "Chaff", junkScore: 95, junkCopies: 3 },
   ];
 
-  it("disposes the highest rank first, then the cheapest tie", () => {
+  it("puts the highest junk score first", () => {
     const sorted = applySharedFiltersAndSort(rows, {
       ...defaultFilters(),
       sortBy: "junk",
@@ -483,71 +484,76 @@ describe("junk sort and filter", () => {
     expect(sorted.map((row) => row.name)).toEqual(["Chaff", "Cheap", "Valuable", "Keep"]);
   });
 
-  it("flips the rank but keeps the keep-worthy rows last", () => {
-    const sorted = applySharedFiltersAndSort(rows, {
+  it("flips the score order but keeps future-build rows last", () => {
+    const mixed = [
+      { name: "Chaff", junkScore: 95, junkCopies: 3 },
+      { name: "Keep", junkScore: 0, junkCopies: 0 },
+      { name: "Later", junkScore: 0, junkBuildLater: true, junkCopies: 0 },
+    ];
+    const desc = applySharedFiltersAndSort(mixed, {
+      ...defaultFilters(),
+      sortBy: "junk",
+      sortDirection: "desc",
+    });
+    expect(desc.map((row) => row.name)).toEqual(["Chaff", "Keep", "Later"]);
+
+    const asc = applySharedFiltersAndSort(mixed, {
       ...defaultFilters(),
       sortBy: "junk",
       sortDirection: "asc",
     });
-    expect(sorted.map((row) => row.name)).toEqual(["Valuable", "Cheap", "Chaff", "Keep"]);
+    expect(asc.map((row) => row.name)).toEqual(["Keep", "Chaff", "Later"]);
   });
 
-  it("pins future-build rows to the bottom in both directions", () => {
-    const mixed = [
-      { name: "Junk", junk: true, junkRank: 3, junkTie: null, junkCopies: 2 },
-      {
-        name: "Later",
-        junk: false,
-        junkBuildLater: true,
-        junkRank: 3,
-        junkTie: null,
-        junkCopies: 0,
-      },
-    ];
-    for (const sortDirection of ["asc", "desc"] as const) {
-      const sorted = applySharedFiltersAndSort(mixed, {
-        ...defaultFilters(),
-        sortBy: "junk",
-        sortDirection,
-      });
-      expect(sorted.map((row) => row.name)).toEqual(["Junk", "Later"]);
-    }
-  });
-
-  it("breaks rank ties by disposable copies", () => {
+  it("breaks score ties by disposable copies", () => {
     const sorted = applySharedFiltersAndSort(
       [
-        { name: "One", junk: true, junkRank: 3, junkTie: null, junkCopies: 1 },
-        { name: "Three", junk: true, junkRank: 3, junkTie: null, junkCopies: 3 },
+        { name: "One", junkScore: 80, junkCopies: 1 },
+        { name: "Three", junkScore: 80, junkCopies: 3 },
       ],
       { ...defaultFilters(), sortBy: "junk", sortDirection: "desc" },
     );
     expect(sorted.map((row) => row.name)).toEqual(["Three", "One"]);
   });
 
-  it("ranks prime parts by their ducats-per-platinum ratio", () => {
-    const sorted = applySharedFiltersAndSort(
-      [
-        { name: "Low", junk: true, junkRank: 1.2, junkTie: null, junkCopies: 2 },
-        { name: "High", junk: true, junkRank: 8.4, junkTie: null, junkCopies: 1 },
-        { name: "NoSpare", junk: false, junkRank: null, junkTie: null, junkCopies: 0 },
-      ],
-      { ...defaultFilters(), sortBy: "junk", sortDirection: "desc" },
-    );
-    expect(sorted.map((row) => row.name)).toEqual(["High", "Low", "NoSpare"]);
-  });
-
-  it("filters to junk only without hiding unannotated rows on No", () => {
+  it("keeps only rows at or above the minimum junk score", () => {
     const filtered = applySharedFiltersAndSort(rows, {
       ...defaultFilters(),
-      junk: "yes",
+      minimumJunk: 60,
     });
     expect(filtered.map((row) => row.name)).toEqual(["Chaff", "Cheap"]);
 
-    const rest = applySharedFiltersAndSort(rows, {
+    const anyJunk = applySharedFiltersAndSort(rows, {
       ...defaultFilters(),
-      junk: "no",
+      minimumJunk: 1,
     });
-    expect(rest.map((row) => row.name)).toEqual(["Keep", "Valuable"]);
+    expect(anyJunk.map((row) => row.name)).toEqual(["Chaff", "Cheap", "Valuable"]);
+  });
+
+  it("filters platinum by both ends of the range", () => {
+    const priced = [
+      { name: "Cheap", platinum: 4 },
+      { name: "Mid", platinum: 25 },
+      { name: "Pricey", platinum: 120 },
+      { name: "Unpriced", platinum: null },
+    ];
+
+    expect(
+      applySharedFiltersAndSort(priced, { ...defaultFilters(), minimumPlatinum: 10 }).map(
+        (row) => row.name,
+      ),
+    ).toEqual(["Mid", "Pricey"]);
+    expect(
+      applySharedFiltersAndSort(priced, { ...defaultFilters(), maximumPlatinum: 50 }).map(
+        (row) => row.name,
+      ),
+    ).toEqual(["Cheap", "Mid"]);
+    expect(
+      applySharedFiltersAndSort(priced, {
+        ...defaultFilters(),
+        minimumPlatinum: 10,
+        maximumPlatinum: 50,
+      }).map((row) => row.name),
+    ).toEqual(["Mid"]);
   });
 });

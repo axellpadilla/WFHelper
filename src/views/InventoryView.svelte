@@ -71,7 +71,7 @@
     classifyForFoundry,
   } from "../lib/inventory/foundryResources.js";
   import { applySharedFiltersAndSort, compareNames, matchesSearch } from "../lib/filters.js";
-  import { DEFAULT_JUNK_MAX_UNIT_VALUE, annotateJunkRows } from "../lib/inventory/junkRules.js";
+  import { annotateJunkRows } from "../lib/inventory/junkRules.js";
   import { buildDetailKeys } from "../lib/inventory/detailKeys.js";
   import { setRootOf } from "../lib/inventory/fullSets.js";
   import {
@@ -282,8 +282,8 @@
     }
     // The junk control only renders on the inventory tabs that annotate it;
     // keep it from hiding every row on Relics, Resources or Pets.
-    if (!isJunkTab(filter) && $inventoryFilters.junk !== "all") {
-      updateSharedFilters("inventory", { junk: "all" });
+    if (!isJunkTab(filter) && $inventoryFilters.minimumJunk > 0) {
+      updateSharedFilters("inventory", { minimumJunk: 0 });
     }
   }
 
@@ -617,9 +617,7 @@
     partMastery,
     $inventorySafetyVerdicts,
   );
-  $: junkTabItems = annotateJunkRows(masteredTabItems, $inventorySafetyContext, {
-    maxUnitValue: DEFAULT_JUNK_MAX_UNIT_VALUE,
-  });
+  $: junkTabItems = annotateJunkRows(masteredTabItems, $inventorySafetyContext);
   $: sortedTabItems = applySharedFiltersAndSort(junkTabItems, $inventoryFilters);
   $: filtered =
     filter === "full_sets" && hiddenSetCategories.length > 0
@@ -729,13 +727,14 @@
     if (state.orderPlaced !== "all") active++;
     if (state.mastered !== "all") active++;
     if (state.spares !== "all") active++;
-    if (state.junk !== "all") active++;
+    if (state.minimumJunk > 0) active++;
     if (state.vaulted !== "all") active++;
     if (state.partType !== "all") active++;
     if (state.favorite !== "all") active++;
     if (state.equipped !== "all") active++;
     if (state.leveledUp !== "all") active++;
     if (state.minimumPlatinum > 0) active++;
+    if (state.maximumPlatinum > 0) active++;
     if (state.minimumDucats > 0) active++;
     if (state.minimumAmount > 0) active++;
     return active;
