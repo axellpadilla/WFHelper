@@ -458,8 +458,59 @@ describe("defaultSortDirection", () => {
       "ev",
       "ducat",
       "ducatonator",
+      "cleanup",
     ]) {
       expect(defaultSortDirection(key)).toBe("desc");
     }
+  });
+});
+
+describe("cleanup sort", () => {
+  const rows = [
+    { name: "Keep", cleanupRank: null, cleanupTie: null, cleanupCopies: 0 },
+    { name: "Valuable", cleanupRank: 1, cleanupTie: 80, cleanupCopies: 1 },
+    { name: "Cheap", cleanupRank: 2, cleanupTie: 5, cleanupCopies: 2 },
+    { name: "Chaff", cleanupRank: 3, cleanupTie: null, cleanupCopies: 3 },
+  ];
+
+  it("disposes the highest rank first, then the cheapest tie", () => {
+    const sorted = applySharedFiltersAndSort(rows, {
+      ...defaultFilters(),
+      sortBy: "cleanup",
+      sortDirection: "desc",
+    });
+    expect(sorted.map((row) => row.name)).toEqual(["Chaff", "Cheap", "Valuable", "Keep"]);
+  });
+
+  it("flips the rank but keeps the keep-worthy rows last", () => {
+    const sorted = applySharedFiltersAndSort(rows, {
+      ...defaultFilters(),
+      sortBy: "cleanup",
+      sortDirection: "asc",
+    });
+    expect(sorted.map((row) => row.name)).toEqual(["Valuable", "Cheap", "Chaff", "Keep"]);
+  });
+
+  it("breaks rank ties by disposable copies", () => {
+    const sorted = applySharedFiltersAndSort(
+      [
+        { name: "One", cleanupRank: 3, cleanupTie: null, cleanupCopies: 1 },
+        { name: "Three", cleanupRank: 3, cleanupTie: null, cleanupCopies: 3 },
+      ],
+      { ...defaultFilters(), sortBy: "cleanup", sortDirection: "desc" },
+    );
+    expect(sorted.map((row) => row.name)).toEqual(["Three", "One"]);
+  });
+
+  it("ranks prime parts by their ducats-per-platinum ratio", () => {
+    const sorted = applySharedFiltersAndSort(
+      [
+        { name: "Low", cleanupRank: 1.2, cleanupTie: null, cleanupCopies: 2 },
+        { name: "High", cleanupRank: 8.4, cleanupTie: null, cleanupCopies: 1 },
+        { name: "NoSpare", cleanupRank: null, cleanupTie: null, cleanupCopies: 0 },
+      ],
+      { ...defaultFilters(), sortBy: "cleanup", sortDirection: "desc" },
+    );
+    expect(sorted.map((row) => row.name)).toEqual(["High", "Low", "NoSpare"]);
   });
 });
