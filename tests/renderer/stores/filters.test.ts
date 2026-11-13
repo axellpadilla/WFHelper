@@ -67,6 +67,8 @@ describe("shared filter persistence", () => {
           masteredMode: "sometimes",
           minimumAmount: 1,
           minimumPlatinum: -30,
+          maximumPlatinum: -5,
+          minimumJunk: -10,
           favorite: "maybe",
         },
         foundry: { sortBy: "invalid", sortDirection: "sideways" },
@@ -78,11 +80,31 @@ describe("shared filter persistence", () => {
       masteredMode: "all",
       minimumAmount: 0,
       minimumPlatinum: 0,
+      maximumPlatinum: 0,
+      minimumJunk: 0,
       favorite: "all",
     });
     expect(get(filters.sharedFilters("foundry"))).toMatchObject({
       sortBy: "count",
       sortDirection: "desc",
+    });
+  });
+
+  it("clamps the platinum and junk bounds", async () => {
+    const filters = await loadFilters({
+      [STORAGE_KEY]: JSON.stringify({
+        inventory: {
+          minimumPlatinum: 2_000_000,
+          maximumPlatinum: 2_000_000,
+          minimumJunk: 300,
+        },
+      }),
+    });
+
+    expect(get(filters.sharedFilters("inventory"))).toMatchObject({
+      minimumPlatinum: 1_000_000,
+      maximumPlatinum: 1_000_000,
+      minimumJunk: 100,
     });
   });
 

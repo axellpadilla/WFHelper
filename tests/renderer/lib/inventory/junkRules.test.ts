@@ -107,27 +107,26 @@ function part(overrides: Partial<JunkItem> = {}): JunkItem {
 }
 
 describe("junkFields for mods", () => {
-  it("treats unranked untradeable duplicates as chaff", () => {
+  it("scores an unranked untradeable duplicate as perfect junk", () => {
     expect(junkFields(mod(), context())).toMatchObject({
-      junk: true,
+      junkScore: 100,
       junkBuildLater: false,
-      junkRank: 3,
       junkCopies: 2,
     });
   });
 
-  it("keeps the last copy", () => {
+  it("scores the last copy as keep", () => {
     expect(junkFields(mod({ amount: 1 }), context())).toMatchObject({
-      junk: false,
+      junkScore: 0,
       junkCopies: 0,
     });
   });
 
   it("never suggests a ranked copy", () => {
-    expect(junkFields(mod({ rank: 5 }), context()).junk).toBe(false);
+    expect(junkFields(mod({ rank: 5 }), context()).junkScore).toBe(0);
   });
 
-  it("separates cheap duplicates from valuable ones", () => {
+  it("scores a cheap duplicate above a valuable one", () => {
     const cheap = junkFields(
       mod({ internalName: MOD_TRADEABLE, tradable: true, platinum: 5 }),
       context(),
@@ -136,8 +135,20 @@ describe("junkFields for mods", () => {
       mod({ internalName: MOD_TRADEABLE, tradable: true, platinum: 80 }),
       context(),
     );
-    expect(cheap).toMatchObject({ junk: true, junkRank: 2, junkCopies: 2 });
-    expect(valuable).toMatchObject({ junk: false, junkRank: 1, junkCopies: 2 });
+    expect(cheap.junkScore).toBe(89);
+    expect(valuable.junkScore).toBe(16);
+  });
+
+  it("raises the score with the number of spare copies", () => {
+    const two = junkFields(
+      mod({ internalName: MOD_TRADEABLE, tradable: true, platinum: 5, amount: 2 }),
+      context(),
+    );
+    const eight = junkFields(
+      mod({ internalName: MOD_TRADEABLE, tradable: true, platinum: 5, amount: 8 }),
+      context(),
+    );
+    expect(eight.junkScore).toBeGreaterThan(two.junkScore ?? 0);
   });
 
   it("honours a per-item spare override", () => {
@@ -146,18 +157,18 @@ describe("junkFields for mods", () => {
     ).toBe(1);
   });
 
-  it("keeps locked, favorited, equipped and already-listed copies", () => {
+  it("keeps locked, favorited, equipped and already-listed copies at zero", () => {
     const locked = context({ settings: settings({ locks: [MOD] }) });
-    expect(junkFields(mod(), locked).junk).toBe(false);
-    expect(junkFields(mod({ favorite: true }), context()).junk).toBe(false);
-    expect(junkFields(mod({ equipped: true }), context()).junk).toBe(false);
-    expect(junkFields(mod({ orderPlaced: true }), context()).junk).toBe(false);
+    expect(junkFields(mod(), locked).junkScore).toBe(0);
+    expect(junkFields(mod({ favorite: true }), context()).junkScore).toBe(0);
+    expect(junkFields(mod({ equipped: true }), context()).junkScore).toBe(0);
+    expect(junkFields(mod({ orderPlaced: true }), context()).junkScore).toBe(0);
   });
 
   it("marks a pinned goal as build-later when nothing is spare", () => {
     const pinned = context({ pinnedRequirements: new Map([[MOD, 3]]) });
     expect(junkFields(mod(), pinned)).toMatchObject({
-      junk: false,
+      junkScore: 0,
       junkBuildLater: true,
       junkCopies: 0,
     });
@@ -166,26 +177,19 @@ describe("junkFields for mods", () => {
 
 describe("junkFields for equipment", () => {
   it("does not suggest unmastered gear", () => {
-    expect(junkFields(weapon({ rank: 0 }), context()).junk).toBe(false);
+    expect(junkFields(weapon({ rank: 0 }), context()).junkScore).toBe(0);
   });
 
-  it("ranks mastered untradeable gear as chaff", () => {
+  it("scores mastered untradeable gear as perfect junk", () => {
     expect(junkFields(weapon(), context())).toMatchObject({
-      junk: true,
-      junkRank: 3,
+      junkScore: 100,
       junkCopies: 1,
     });
   });
 
   it("separates cheap tradable gear from valuable gear", () => {
-    expect(junkFields(weapon({ tradable: true, platinum: 8 }), context())).toMatchObject({
-      junk: true,
-      junkRank: 2,
-    });
-    expect(junkFields(weapon({ tradable: true, platinum: 200 }), context())).toMatchObject({
-      junk: false,
-      junkRank: 1,
-    });
+    expect(junkFields(weapon({ tradable: true, platinum: 8 }), context()).junkScore).toBe(70);
+    expect(junkFields(weapon({ tradable: true, platinum: 200 }), context()).junkScore).toBe(0);
   });
 
   it("keeps the only copy of an ingredient for an unmastered build", () => {
@@ -194,7 +198,7 @@ describe("junkFields for equipment", () => {
         weapon({ internalName: INGREDIENT, name: "Broken War", tradable: false }),
         context(),
       ),
-    ).toMatchObject({ junk: false, junkBuildLater: true, junkCopies: 0 });
+    ).toMatchObject({ junkScore: 0, junkBuildLater: true, junkCopies: 0 });
   });
 
   it("allows selling duplicate ingredients beyond the copy the build needs", () => {
@@ -203,7 +207,7 @@ describe("junkFields for equipment", () => {
         weapon({ internalName: INGREDIENT, name: "Broken War", tradable: false, amount: 2 }),
         context(),
       ),
-    ).toMatchObject({ junk: true, junkCopies: 1 });
+    ).toMatchObject({ junkScore: 100, junkCopies: 1 });
   });
 
   it("releases the ingredient once the product is mastered", () => {
@@ -212,54 +216,46 @@ describe("junkFields for equipment", () => {
         weapon({ internalName: INGREDIENT, name: "Broken War", tradable: false }),
         context({ masteredUniqueNames: MASTERED }),
       ),
-    ).toMatchObject({ junk: true, junkCopies: 1 });
+    ).toMatchObject({ junkScore: 100, junkCopies: 1 });
   });
 });
 
 describe("junkFields for prime parts", () => {
-  it("ranks spare parts by ducats per platinum", () => {
+  it("weighs platinum and ducats per platinum", () => {
     expect(junkFields(part({ amount: 3, platinum: 5, ducatonator: 3 }), context())).toMatchObject({
-      junk: true,
+      junkScore: 83,
       junkBuildLater: false,
-      junkRank: 3,
       junkCopies: 2,
     });
   });
 
   it("keeps the only copy a future build still needs", () => {
     expect(junkFields(part({ amount: 1, platinum: 5, ducatonator: 3 }), context())).toMatchObject({
-      junk: false,
+      junkScore: 0,
       junkBuildLater: true,
       junkCopies: 0,
     });
   });
 
-  it("lets go of spares beyond what the future build needs", () => {
-    expect(junkFields(part({ amount: 3, platinum: 5, ducatonator: 3 }), context()).junkCopies).toBe(
-      2,
+  it("keeps an expensive pile well below the junk threshold", () => {
+    expect(
+      junkFields(
+        part({ amount: 100, platinum: 100, ducatonator: 0.15 }),
+        context({ masteredUniqueNames: MASTERED }),
+      ),
+    ).toMatchObject({ junkScore: 15, junkCopies: 100 });
+  });
+
+  it("lets a strong ducat ratio lift a moderately priced part", () => {
+    const moderate = junkFields(
+      part({ amount: 2, platinum: 20, ducatonator: 2.25 }),
+      context({ masteredUniqueNames: MASTERED }),
     );
-  });
-
-  it("does not call an expensive part junk, even when it is spare", () => {
-    expect(
-      junkFields(
-        part({ amount: 2, platinum: 100, ducatonator: 0.15 }),
-        context({ masteredUniqueNames: MASTERED }),
-      ),
-    ).toMatchObject({ junk: false, junkRank: 0.15, junkCopies: 2 });
-  });
-
-  it("still favours a part whose ducats beat its platinum", () => {
-    expect(
-      junkFields(
-        part({ amount: 2, platinum: 20, ducatonator: 2.25 }),
-        context({ masteredUniqueNames: MASTERED }),
-      ),
-    ).toMatchObject({ junk: true, junkRank: 2.25, junkCopies: 2 });
+    expect(moderate.junkScore).toBe(56);
   });
 
   it("excludes a part already listed on the market", () => {
-    expect(junkFields(part({ amount: 3, orderPlaced: true }), context()).junk).toBe(false);
+    expect(junkFields(part({ amount: 3, orderPlaced: true }), context()).junkScore).toBe(0);
   });
 
   it("keeps copies a pin claims", () => {
@@ -270,24 +266,21 @@ describe("junkFields for prime parts", () => {
       ).junkCopies,
     ).toBe(1);
   });
+
+  it("scores a spare with no price as perfect junk", () => {
+    expect(junkFields(part({ amount: 2, platinum: null }), context()).junkScore).toBe(100);
+  });
 });
 
 describe("annotateJunkRows", () => {
   it("reuses a row whose junk values did not change", () => {
-    const row = {
-      ...mod(),
-      junk: true,
-      junkBuildLater: false,
-      junkRank: 3,
-      junkTie: null,
-      junkCopies: 2,
-    };
+    const row = { ...mod(), junkScore: 100, junkBuildLater: false, junkCopies: 2 };
     const [annotated] = annotateJunkRows([row], context());
     expect(annotated).toBe(row);
   });
 
   it("annotates a fresh row", () => {
     const [annotated] = annotateJunkRows([mod()], context());
-    expect(annotated).toMatchObject({ junk: true, junkRank: 3, junkCopies: 2 });
+    expect(annotated).toMatchObject({ junkScore: 100, junkCopies: 2 });
   });
 });

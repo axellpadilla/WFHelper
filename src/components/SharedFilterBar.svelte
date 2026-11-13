@@ -177,7 +177,6 @@
       | "orderPlaced"
       | "mastered"
       | "spares"
-      | "junk"
       | "vaulted"
       | "favorite"
       | "equipped"
@@ -203,6 +202,15 @@
     updateSharedFilters(scope, { minimumPlatinum });
   }
 
+  function setMaximumPlatinum(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    const value = input.valueAsNumber;
+    const maximumPlatinum = Number.isFinite(value)
+      ? Math.max(0, Math.min(1_000_000, Math.floor(value)))
+      : 0;
+    updateSharedFilters(scope, { maximumPlatinum });
+  }
+
   function setMinimumDucats(event: Event): void {
     const input = event.currentTarget as HTMLInputElement;
     const value = input.valueAsNumber;
@@ -210,6 +218,13 @@
       ? Math.max(0, Math.min(1_000_000, Math.floor(value)))
       : 0;
     updateSharedFilters(scope, { minimumDucats });
+  }
+
+  function setMinimumJunk(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    const value = input.valueAsNumber;
+    const minimumJunk = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.floor(value))) : 0;
+    updateSharedFilters(scope, { minimumJunk });
   }
 </script>
 
@@ -342,19 +357,6 @@
             {/each}
           </div>
         </div>
-      {:else if id === "junk"}
-        <div class="shared-chip-group" title={$tr("filters.junkHint")}>
-          <span class="shared-chip-label">{$tr("filters.junk")}</span>
-          <div class="filter-tabs">
-            {#each YES_NO_OPTIONS as [mode, label]}
-              <button
-                class="filter-tab"
-                class:active={state.junk === mode}
-                on:click={() => setYesNoFilter("junk", mode)}>{label}</button
-              >
-            {/each}
-          </div>
-        </div>
       {:else if id === "vaultedChips"}
         <div class="shared-chip-group" title={$tr("filters.vaultedHint")}>
           <span class="shared-chip-label">{$tr("common.vaulted")}</span>
@@ -399,7 +401,7 @@
         </div>
       {:else if id === "minPlatinum"}
         <div class="shared-chip-group" title={$tr("filters.minPlatinumTitle")}>
-          <span class="shared-chip-label">{$tr("filters.minPlatinumTitle")}</span>
+          <span class="shared-chip-label">{$tr("filters.platinumRange")}</span>
           <div class="filter-tabs">
             <label class="shared-number-filter">
               <input
@@ -411,6 +413,17 @@
                 placeholder={$tr("filters.any")}
                 aria-label={$tr("filters.customMinPlatinum")}
                 on:input={setMinimumPlatinum}
+              />
+              <span>–</span>
+              <input
+                type="number"
+                min="0"
+                max="1000000"
+                step="1"
+                value={state.maximumPlatinum || ""}
+                placeholder={$tr("filters.any")}
+                aria-label={$tr("filters.customMaxPlatinum")}
+                on:input={setMaximumPlatinum}
               />
               <span>p</span>
             </label>
@@ -432,6 +445,25 @@
                 on:input={setMinimumDucats}
               />
               <span>d</span>
+            </label>
+          </div>
+        </div>
+      {:else if id === "minJunk"}
+        <div class="shared-chip-group" title={$tr("filters.junkHint")}>
+          <span class="shared-chip-label">{$tr("filters.junk")}</span>
+          <div class="filter-tabs">
+            <label class="shared-number-filter">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={state.minimumJunk || ""}
+                placeholder={$tr("filters.any")}
+                aria-label={$tr("filters.junkScoreAria")}
+                on:input={setMinimumJunk}
+              />
+              <span>%</span>
             </label>
           </div>
         </div>

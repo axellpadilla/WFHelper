@@ -7,10 +7,6 @@ import {
 } from "./safetyRules.js";
 import type { InventoryGroup, ItemDbEntry } from "../../types/inventory.js";
 
-/** At or below this price a disposable copy is chaff: cheap enough to transmute
- *  or sell for credits without thinking about the platinum left on the table. */
-export const DEFAULT_JUNK_MAX_UNIT_VALUE = 10;
-
 /** The row fields the junk rules read. `InventoryViewItem` satisfies it. */
 export interface JunkItem {
   internalName: string;
@@ -28,26 +24,18 @@ export interface JunkItem {
   orderPlaced?: boolean;
 }
 
-interface JunkOptions {
-  maxUnitValue: number;
-}
-
 /** What the shared filter reads and the `junk` sort compares. */
 interface JunkFields {
-  junk?: boolean;
+  /** 0 (keep) to 100 (perfect junk). */
+  junkScore?: number;
   /** Copies a future build, a pin or set-keep still claims: always sort last. */
   junkBuildLater?: boolean;
-  /** Tier for gear, ducats per platinum for parts. */
-  junkRank?: number | null;
-  junkTie?: number | null;
   junkCopies?: number | null;
 }
 
 const NONE: JunkFields = {
-  junk: false,
+  junkScore: 0,
   junkBuildLater: false,
-  junkRank: null,
-  junkTie: null,
   junkCopies: 0,
 };
 
@@ -57,11 +45,6 @@ function finiteCount(value: unknown): number {
 
 function positiveNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function pricedValue(item: JunkItem): number | null {
-  if (item.tradable !== true) return null;
-  return positiveNumber(item.platinum);
 }
 
 function aliasesFor(key: string, itemDb: Record<string, ItemDbEntry>): string[] {
@@ -90,13 +73,47 @@ function demandCopies(
   return reserveUnitsToCopies(units, entryFor(aliases, itemDb));
 }
 
-function tierFor(value: number | null, options: JunkOptions): number {
-  if (value == null) return 3;
-  return value <= options.maxUnitValue ? 2 : 1;
+/** Per-copy platinum value alone: the lower it is, the more disposable. */
+function platinumBand(platinum: number | null): number {
+  if (platinum == null) return 100;
+  if (platinum <= 1) return 95;
+  if (platinum <= 5) return 85;
+  if (platinum <= 10) return 70;
+  if (platinum <= 20) return 55;
+  if (platinum <= 50) return 35;
+  if (platinum <= 100) return 15;
+  return 0;
 }
 
-/** A copy kept for later: no junk, and the sort pins it to the bottom. */
-function buildLater(later: boolean): JunkFields {
+function gearBase(item: JunkItem): number {
+  if (item.tradable !== true) return 100;
+  return platinumBand(positiveNumber(item.platinum));
+}
+
+/** Parts also weigh ducats per platinum: a cheap part whose ducats beat its
+ *  platinum is better Baro fodder, but the per-copy price still dominates. */
+function partBase(item: JunkItem): number {
+  if (item.tradable !== true) return 100;
+  const platinum = positiveNumber(item.platinum);
+  if (platinum == null) return 100;
+  const ratio = positiveNumber(item.ducatonator) ?? 0;
+  const ducats = Math.min(100, Math.round(ratio * 20));
+  return Math.round(platinumBand(platinum) * 0.75 + ducats * 0.25);
+}
+
+/** Quantity nudges the score up, but it can never turn an expensive pile into
+ *  junk: a 100p copy stays below the useful threshold even at 100 copies. */
+function quantityFactor(copies: number): number {
+  if (copies <= 1) return 1;
+  return 1 + Math.min(0.25, 0.05 * Math.log2(copies));
+}
+
+function scoreFor(base: number, copies: number): number {
+  if (copies <= 0 || base <= 0) return 0;
+  return Math.min(100, Math.round(base * quantityFactor(copies)));
+}
+
+function later(later: boolean): JunkFields {
   return later ? { ...NONE, junkBuildLater: true } : NONE;
 }
 
@@ -105,11 +122,7 @@ function buildLater(later: boolean): JunkFields {
  * floors untradeable rows and built gear to "keep all", which is right for
  * listing but would hide exactly the chaff this feature exists to surface.
  */
-export function junkFields(
-  item: JunkItem,
-  context: SafetyContext,
-  options: JunkOptions = { maxUnitValue: DEFAULT_JUNK_MAX_UNIT_VALUE },
-): JunkFields {
+export function junkFields(item: JunkItem, context: SafetyContext): JunkFields {
   const group = item.inventoryGroup;
   if (group !== "all_parts" && group !== "mods" && group !== "equipment") return NONE;
   if (item.favorite === true || item.equipped === true || item.orderPlaced === true) return NONE;
@@ -134,13 +147,10 @@ export function junkFields(
     // never suggest one as transmute fodder.
     if ((item.rank ?? 0) > 0) return NONE;
     const copies = amount - Math.max(1, spare, pinned);
-    if (copies <= 0) return buildLater(pinned > 0 || setKeep > 0);
-    const value = pricedValue(item);
+    if (copies <= 0) return later(pinned > 0 || setKeep > 0);
     return {
-      junk: value == null || value <= options.maxUnitValue,
+      junkScore: scoreFor(gearBase(item), copies),
       junkBuildLater: false,
-      junkRank: tierFor(value, options),
-      junkTie: value,
       junkCopies: copies,
     };
   }
@@ -152,28 +162,19 @@ export function junkFields(
       aliases.some((alias) => context.mastered.has(alias));
     if (!mastered) return NONE;
     const copies = amount - Math.max(spare, pinned, setKeep, needed);
-    if (copies <= 0) return buildLater(needed > 0 || pinned > 0 || setKeep > 0);
-    const value = pricedValue(item);
+    if (copies <= 0) return later(needed > 0 || pinned > 0 || setKeep > 0);
     return {
-      junk: value == null || value <= options.maxUnitValue,
+      junkScore: scoreFor(gearBase(item), copies),
       junkBuildLater: false,
-      junkRank: tierFor(value, options),
-      junkTie: value,
       junkCopies: copies,
     };
   }
 
-  // Prime parts: a copy is junk when it is spare and cheap, or when the ducats
-  // are worth at least as much as the platinum it would cost to sell it.
   const copies = amount - Math.max(spare, pinned, setKeep, needed);
-  if (copies <= 0) return buildLater(needed > 0 || pinned > 0 || setKeep > 0);
-  const value = positiveNumber(item.platinum);
-  const ratio = positiveNumber(item.ducatonator);
+  if (copies <= 0) return later(needed > 0 || pinned > 0 || setKeep > 0);
   return {
-    junk: value == null || value <= options.maxUnitValue || (ratio != null && ratio >= 1),
+    junkScore: scoreFor(partBase(item), copies),
     junkBuildLater: false,
-    junkRank: ratio,
-    junkTie: null,
     junkCopies: copies,
   };
 }
@@ -183,16 +184,13 @@ export function junkFields(
 export function annotateJunkRows<T extends JunkItem>(
   rows: T[],
   context: SafetyContext,
-  options: JunkOptions = { maxUnitValue: DEFAULT_JUNK_MAX_UNIT_VALUE },
 ): (T & JunkFields)[] {
   return rows.map((row) => {
-    const fields = junkFields(row, context, options);
+    const fields = junkFields(row, context);
     const previous = row as T & JunkFields;
     if (
-      previous.junk === fields.junk &&
+      previous.junkScore === fields.junkScore &&
       previous.junkBuildLater === fields.junkBuildLater &&
-      previous.junkRank === fields.junkRank &&
-      previous.junkTie === fields.junkTie &&
       previous.junkCopies === fields.junkCopies
     ) {
       return row as T & JunkFields;

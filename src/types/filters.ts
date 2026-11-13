@@ -49,12 +49,12 @@ export type FilterControlId =
   | "orderPlaced"
   | "mastered"
   | "spares"
-  | "junk"
   | "vaultedChips"
   | "partType"
   | "favorite"
   | "minPlatinum"
   | "minDucats"
+  | "minJunk"
   | "minAmount"
   | "equipped"
   | "leveledUp";
@@ -74,11 +74,13 @@ export interface SharedFiltersState {
   orderPlaced: YesNoFilterMode;
   mastered: YesNoFilterMode;
   spares: YesNoFilterMode;
-  junk: YesNoFilterMode;
+  /** 0 = off, otherwise the minimum 0-100 junk score to keep. */
+  minimumJunk: number;
   vaulted: YesNoFilterMode;
   partType: PartTypeFilterMode;
   favorite: YesNoFilterMode;
   minimumPlatinum: number;
+  maximumPlatinum: number;
   minimumDucats: number;
   /** 0 = any, 2 = only items owned more than once (">1"). */
   minimumAmount: 0 | 2;
