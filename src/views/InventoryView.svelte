@@ -71,10 +71,7 @@
     classifyForFoundry,
   } from "../lib/inventory/foundryResources.js";
   import { applySharedFiltersAndSort, compareNames, matchesSearch } from "../lib/filters.js";
-  import {
-    DEFAULT_CLEANUP_MAX_UNIT_VALUE,
-    annotateCleanupRows,
-  } from "../lib/inventory/cleanupRules.js";
+  import { DEFAULT_JUNK_MAX_UNIT_VALUE, annotateJunkRows } from "../lib/inventory/junkRules.js";
   import { buildDetailKeys } from "../lib/inventory/detailKeys.js";
   import { setRootOf } from "../lib/inventory/fullSets.js";
   import {
@@ -112,12 +109,7 @@
   import { inventoryViewMode } from "../stores/inventoryViewMode.js";
   import { inventoryValueAllTradables, inventoryValueMinPlatinum } from "../stores/preferences.js";
   import { activeItem, activeRelic } from "../stores/modals.js";
-  import {
-    inventorySafetyContext,
-    inventorySafetyVerdicts,
-    verdictFor,
-  } from "../stores/inventorySafety.js";
-  import type { SafetyVerdictLookup } from "../lib/inventory/safetyRules.js";
+  import { inventorySafetyContext, inventorySafetyVerdicts } from "../stores/inventorySafety.js";
   import {
     bulkSellOpen,
     clearSelection,
@@ -209,22 +201,23 @@
     ["name", $tr("common.name")],
     ["amount", $tr("filters.amount")],
   ] as Array<[SharedSortKey, string]>;
-  $: PART_CLEANUP_SORT_OPTIONS = [
-    ...FULL_SORT_OPTIONS,
-    ["cleanup", $tr("filters.cleanupSort")],
-  ] as Array<[SharedSortKey, string]>;
-  $: GEAR_CLEANUP_SORT_OPTIONS = [
-    ...PRICED_SORT_OPTIONS,
-    ["cleanup", $tr("filters.cleanupSort")],
-  ] as Array<[SharedSortKey, string]>;
+  $: EVERYTHING_SORT_OPTIONS = [...DUCAT_SORT_OPTIONS, ["junk", $tr("filters.junkSort")]] as Array<
+    [SharedSortKey, string]
+  >;
+  $: PART_JUNK_SORT_OPTIONS = [...FULL_SORT_OPTIONS, ["junk", $tr("filters.junkSort")]] as Array<
+    [SharedSortKey, string]
+  >;
+  $: GEAR_JUNK_SORT_OPTIONS = [...PRICED_SORT_OPTIONS, ["junk", $tr("filters.junkSort")]] as Array<
+    [SharedSortKey, string]
+  >;
   $: SORT_OPTIONS_BY_TAB = {
-    everything: DUCAT_SORT_OPTIONS,
-    all_parts: PART_CLEANUP_SORT_OPTIONS,
+    everything: EVERYTHING_SORT_OPTIONS,
+    all_parts: PART_JUNK_SORT_OPTIONS,
     relics: DUCAT_SORT_OPTIONS,
     full_sets: FULL_SET_SORT_OPTIONS,
     resources: RESOURCE_SORT_OPTIONS,
-    mods: GEAR_CLEANUP_SORT_OPTIONS,
-    equipment: GEAR_CLEANUP_SORT_OPTIONS,
+    mods: GEAR_JUNK_SORT_OPTIONS,
+    equipment: GEAR_JUNK_SORT_OPTIONS,
   } as Partial<Record<InventoryFilterTab, Array<[SharedSortKey, string]>>>;
 
   let filter: InventoryFilterTab = restoreFilterTab();
@@ -234,11 +227,6 @@
   let showFilterPanel = false;
   // Full Sets lists sellable spares; this folds in the sets still missing parts.
   let showIncompleteSets = false;
-  // Cleanup is a preset, not persisted: enabling it snapshots the bar so
-  // turning it off puts the user's own filters back.
-  let cleanupMode = false;
-  let cleanupMaxValue = DEFAULT_CLEANUP_MAX_UNIT_VALUE;
-  let cleanupSnapshot: SharedFiltersState | null = null;
   let selectedInternalName: string | null = null;
   /** Last ticked row; shift-click extends the selection from here. */
   let selectionAnchor: string | null = null;
@@ -270,69 +258,14 @@
     hydration.enqueue(background, $wfmItems, { ...needs, ducats: false, orders: false });
   }
 
-  function isCleanupTab(tab: InventoryFilterTab): boolean {
-    return tab === "all_parts" || tab === "mods" || tab === "equipment";
-  }
-
-  /** The preset the Cleanup toggle writes, per tab. Everything else is reset so
-   *  a previously active floor cannot silently hide the fodder. */
-  function cleanupPreset(tab: InventoryFilterTab): Partial<SharedFiltersState> {
-    const reset: Partial<SharedFiltersState> = {
-      primeMode: "all",
-      masteredMode: "all",
-      spares: "all",
-      vaulted: "all",
-      partType: "all",
-      favorite: "no",
-      minimumPlatinum: 0,
-      minimumDucats: 0,
-      minimumAmount: 0,
-      equipped: "no",
-      leveledUp: "all",
-      subsumed: "all",
-      foundryState: "all",
-      sortBy: "cleanup",
-      sortDirection: "desc",
-    };
-    if (tab === "all_parts") return { ...reset, spares: "yes" };
-    if (tab === "mods") return { ...reset, minimumAmount: 2, leveledUp: "no" };
-    return { ...reset, masteredMode: "mastered" };
-  }
-
-  function disableCleanup(): void {
-    cleanupMode = false;
-    if (cleanupSnapshot) updateSharedFilters("inventory", cleanupSnapshot);
-    cleanupSnapshot = null;
-  }
-
-  function toggleCleanup(): void {
-    if (cleanupMode) {
-      disableCleanup();
-      return;
-    }
-    cleanupSnapshot = { ...$inventoryFilters };
-    cleanupMode = true;
-    updateSharedFilters("inventory", cleanupPreset(filter));
-  }
-
-  function setCleanupMaxValue(event: Event): void {
-    const value = Number((event.currentTarget as HTMLInputElement).value);
-    if (Number.isFinite(value) && value >= 0) cleanupMaxValue = Math.floor(value);
-  }
-
-  /** Spare copies come from the trade engine: prime parts are tradable
-   *  components, so its `safe` count is exactly "owned above what builds need". */
-  function spareCopiesFor(item: InventoryViewItem, verdicts: SafetyVerdictLookup): number {
-    if (item.inventoryGroup !== "all_parts") return 0;
-    return verdictFor(item, verdicts)?.safe ?? 0;
+  /** The tabs where rows carry a junk annotation. Leaving them resets the
+   *  filter so it cannot silently hide a tab that never computes a score. */
+  function isJunkTab(tab: InventoryFilterTab): boolean {
+    return tab === "everything" || tab === "all_parts" || tab === "mods" || tab === "equipment";
   }
 
   function handleFilterSelect(event: CustomEvent<InventoryFilterTab>): void {
     const next = event.detail;
-    if (cleanupMode) {
-      if (isCleanupTab(next)) updateSharedFilters("inventory", cleanupPreset(next));
-      else disableCleanup();
-    }
     filter = next;
     writeStorage(FILTER_TAB_KEY, filter);
     if (filter === "pets") {
@@ -346,6 +279,11 @@
     // rows with no control and no badge to reveal it.
     if (filter === "resources" && $inventoryFilters.minimumAmount > 0) {
       updateSharedFilters("inventory", { minimumAmount: 0 });
+    }
+    // The junk control only renders on the inventory tabs that annotate it;
+    // keep it from hiding every row on Relics, Resources or Pets.
+    if (!isJunkTab(filter) && $inventoryFilters.junk !== "all") {
+      updateSharedFilters("inventory", { junk: "all" });
     }
   }
 
@@ -679,14 +617,10 @@
     partMastery,
     $inventorySafetyVerdicts,
   );
-  $: cleanupVerdicts = $inventorySafetyVerdicts;
-  $: cleanupTabItems = annotateCleanupRows(
-    masteredTabItems,
-    $inventorySafetyContext,
-    { maxUnitValue: cleanupMaxValue },
-    (item) => spareCopiesFor(item, cleanupVerdicts),
-  );
-  $: sortedTabItems = applySharedFiltersAndSort(cleanupTabItems, $inventoryFilters);
+  $: junkTabItems = annotateJunkRows(masteredTabItems, $inventorySafetyContext, {
+    maxUnitValue: DEFAULT_JUNK_MAX_UNIT_VALUE,
+  });
+  $: sortedTabItems = applySharedFiltersAndSort(junkTabItems, $inventoryFilters);
   $: filtered =
     filter === "full_sets" && hiddenSetCategories.length > 0
       ? sortedTabItems.filter((item) => enabledSetCategories.has(setCategoryFor(item, $itemDb)))
@@ -795,6 +729,7 @@
     if (state.orderPlaced !== "all") active++;
     if (state.mastered !== "all") active++;
     if (state.spares !== "all") active++;
+    if (state.junk !== "all") active++;
     if (state.vaulted !== "all") active++;
     if (state.partType !== "all") active++;
     if (state.favorite !== "all") active++;
@@ -921,35 +856,6 @@
             : ''}"
         >
           <div class="min-w-0" data-tour="inventory-grid">
-            {#if isCleanupTab(filter)}
-              <div
-                class="mb-2 flex w-fit flex-wrap items-center gap-3 text-xs text-text-secondary"
-                data-inventory-cleanup
-              >
-                <label class="flex cursor-pointer items-center gap-2">
-                  <input type="checkbox" checked={cleanupMode} on:change={toggleCleanup} />
-                  <span title={$tr("inventory.cleanupModeHint")}>
-                    {$tr("inventory.cleanupMode")}
-                  </span>
-                </label>
-                {#if cleanupMode && filter !== "all_parts"}
-                  <label
-                    class="flex items-center gap-1.5"
-                    title={$tr("inventory.cleanupMaxValueHint")}
-                  >
-                    <span>{$tr("inventory.cleanupMaxValue")}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      class="w-16 rounded border border-[var(--ui-panel-border)] bg-[var(--ui-panel-bg)] px-1.5 py-0.5 text-right tabular-nums"
-                      value={cleanupMaxValue}
-                      on:change={setCleanupMaxValue}
-                    />
-                  </label>
-                {/if}
-              </div>
-            {/if}
             {#if filter === "everything"}
               <ChipToggleRow
                 rowName="everything-sources"

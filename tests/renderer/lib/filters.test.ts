@@ -24,6 +24,7 @@ function defaultFilters(): SharedFiltersState {
     orderPlaced: "all",
     mastered: "all",
     spares: "all",
+    junk: "all",
     vaulted: "all",
     partType: "all",
     favorite: "all",
@@ -458,25 +459,25 @@ describe("defaultSortDirection", () => {
       "ev",
       "ducat",
       "ducatonator",
-      "cleanup",
+      "junk",
     ]) {
       expect(defaultSortDirection(key)).toBe("desc");
     }
   });
 });
 
-describe("cleanup sort", () => {
+describe("junk sort and filter", () => {
   const rows = [
-    { name: "Keep", cleanupRank: null, cleanupTie: null, cleanupCopies: 0 },
-    { name: "Valuable", cleanupRank: 1, cleanupTie: 80, cleanupCopies: 1 },
-    { name: "Cheap", cleanupRank: 2, cleanupTie: 5, cleanupCopies: 2 },
-    { name: "Chaff", cleanupRank: 3, cleanupTie: null, cleanupCopies: 3 },
+    { name: "Keep", junk: false, junkRank: null, junkTie: null, junkCopies: 0 },
+    { name: "Valuable", junk: false, junkRank: 1, junkTie: 80, junkCopies: 1 },
+    { name: "Cheap", junk: true, junkRank: 2, junkTie: 5, junkCopies: 2 },
+    { name: "Chaff", junk: true, junkRank: 3, junkTie: null, junkCopies: 3 },
   ];
 
   it("disposes the highest rank first, then the cheapest tie", () => {
     const sorted = applySharedFiltersAndSort(rows, {
       ...defaultFilters(),
-      sortBy: "cleanup",
+      sortBy: "junk",
       sortDirection: "desc",
     });
     expect(sorted.map((row) => row.name)).toEqual(["Chaff", "Cheap", "Valuable", "Keep"]);
@@ -485,19 +486,41 @@ describe("cleanup sort", () => {
   it("flips the rank but keeps the keep-worthy rows last", () => {
     const sorted = applySharedFiltersAndSort(rows, {
       ...defaultFilters(),
-      sortBy: "cleanup",
+      sortBy: "junk",
       sortDirection: "asc",
     });
     expect(sorted.map((row) => row.name)).toEqual(["Valuable", "Cheap", "Chaff", "Keep"]);
   });
 
+  it("pins future-build rows to the bottom in both directions", () => {
+    const mixed = [
+      { name: "Junk", junk: true, junkRank: 3, junkTie: null, junkCopies: 2 },
+      {
+        name: "Later",
+        junk: false,
+        junkBuildLater: true,
+        junkRank: 3,
+        junkTie: null,
+        junkCopies: 0,
+      },
+    ];
+    for (const sortDirection of ["asc", "desc"] as const) {
+      const sorted = applySharedFiltersAndSort(mixed, {
+        ...defaultFilters(),
+        sortBy: "junk",
+        sortDirection,
+      });
+      expect(sorted.map((row) => row.name)).toEqual(["Junk", "Later"]);
+    }
+  });
+
   it("breaks rank ties by disposable copies", () => {
     const sorted = applySharedFiltersAndSort(
       [
-        { name: "One", cleanupRank: 3, cleanupTie: null, cleanupCopies: 1 },
-        { name: "Three", cleanupRank: 3, cleanupTie: null, cleanupCopies: 3 },
+        { name: "One", junk: true, junkRank: 3, junkTie: null, junkCopies: 1 },
+        { name: "Three", junk: true, junkRank: 3, junkTie: null, junkCopies: 3 },
       ],
-      { ...defaultFilters(), sortBy: "cleanup", sortDirection: "desc" },
+      { ...defaultFilters(), sortBy: "junk", sortDirection: "desc" },
     );
     expect(sorted.map((row) => row.name)).toEqual(["Three", "One"]);
   });
@@ -505,12 +528,26 @@ describe("cleanup sort", () => {
   it("ranks prime parts by their ducats-per-platinum ratio", () => {
     const sorted = applySharedFiltersAndSort(
       [
-        { name: "Low", cleanupRank: 1.2, cleanupTie: null, cleanupCopies: 2 },
-        { name: "High", cleanupRank: 8.4, cleanupTie: null, cleanupCopies: 1 },
-        { name: "NoSpare", cleanupRank: null, cleanupTie: null, cleanupCopies: 0 },
+        { name: "Low", junk: true, junkRank: 1.2, junkTie: null, junkCopies: 2 },
+        { name: "High", junk: true, junkRank: 8.4, junkTie: null, junkCopies: 1 },
+        { name: "NoSpare", junk: false, junkRank: null, junkTie: null, junkCopies: 0 },
       ],
-      { ...defaultFilters(), sortBy: "cleanup", sortDirection: "desc" },
+      { ...defaultFilters(), sortBy: "junk", sortDirection: "desc" },
     );
     expect(sorted.map((row) => row.name)).toEqual(["High", "Low", "NoSpare"]);
+  });
+
+  it("filters to junk only without hiding unannotated rows on No", () => {
+    const filtered = applySharedFiltersAndSort(rows, {
+      ...defaultFilters(),
+      junk: "yes",
+    });
+    expect(filtered.map((row) => row.name)).toEqual(["Chaff", "Cheap"]);
+
+    const rest = applySharedFiltersAndSort(rows, {
+      ...defaultFilters(),
+      junk: "no",
+    });
+    expect(rest.map((row) => row.name)).toEqual(["Keep", "Valuable"]);
   });
 });

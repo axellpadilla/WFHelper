@@ -177,6 +177,7 @@
       | "orderPlaced"
       | "mastered"
       | "spares"
+      | "junk"
       | "vaulted"
       | "favorite"
       | "equipped"
@@ -337,6 +338,19 @@
                 class="filter-tab"
                 class:active={state.spares === mode}
                 on:click={() => setYesNoFilter("spares", mode)}>{label}</button
+              >
+            {/each}
+          </div>
+        </div>
+      {:else if id === "junk"}
+        <div class="shared-chip-group" title={$tr("filters.junkHint")}>
+          <span class="shared-chip-label">{$tr("filters.junk")}</span>
+          <div class="filter-tabs">
+            {#each YES_NO_OPTIONS as [mode, label]}
+              <button
+                class="filter-tab"
+                class:active={state.junk === mode}
+                on:click={() => setYesNoFilter("junk", mode)}>{label}</button
               >
             {/each}
           </div>
