@@ -41,6 +41,7 @@ const SORT_KEYS = [
   "missing_parts",
   "parts_owned",
   "mastery_xp",
+  "junk",
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -77,6 +78,7 @@ function normalizeSharedFiltersByScope(value: unknown): Record<FilterScope, Shar
     if (isOneOf(saved.orderPlaced, YES_NO_MODES)) next.orderPlaced = saved.orderPlaced;
     if (isOneOf(saved.mastered, YES_NO_MODES)) next.mastered = saved.mastered;
     if (isOneOf(saved.spares, YES_NO_MODES)) next.spares = saved.spares;
+    if (isOneOf(saved.junk, YES_NO_MODES)) next.junk = saved.junk;
     if (isOneOf(saved.vaulted, YES_NO_MODES)) next.vaulted = saved.vaulted;
     if (isOneOf(saved.partType, PART_TYPE_MODES)) next.partType = saved.partType;
     if (isOneOf(saved.favorite, YES_NO_MODES)) next.favorite = saved.favorite;
@@ -130,6 +132,7 @@ function createDefaultSharedFiltersState(): SharedFiltersState {
     orderPlaced: "all",
     mastered: "all",
     spares: "all",
+    junk: "all",
     vaulted: "all",
     partType: "all",
     favorite: "all",

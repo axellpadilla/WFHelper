@@ -24,6 +24,7 @@ function defaultFilters(): SharedFiltersState {
     orderPlaced: "all",
     mastered: "all",
     spares: "all",
+    junk: "all",
     vaulted: "all",
     partType: "all",
     favorite: "all",

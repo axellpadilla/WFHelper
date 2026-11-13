@@ -26,7 +26,7 @@ const DESCENDING_DEFAULT_SORT_KEYS = new Set<string>([
   "complete_sets",
   "mastery_xp",
   "parts_owned",
-  "cleanup",
+  "junk",
   "ev",
   "gold",
   "ducat",
@@ -70,11 +70,14 @@ interface FilterableItem {
   missingParts?: number | null;
   /** Distinct component types owned; null when the item has no parts to track. */
   partsOwned?: number | null;
-  /** Cleanup annotation: primary rank (tier or ducatonator), cheap-first tie,
-   *  and how many copies are disposable. Only the annotated tabs carry them. */
-  cleanupRank?: number | null;
-  cleanupTie?: number | null;
-  cleanupCopies?: number | null;
+  /** Junk annotation: whether the row is cheap junk, whether a future build
+   *  claims it, its sort rank (tier or ducatonator), cheap-first tie and how
+   *  many copies are disposable. Only the annotated tabs carry them. */
+  junk?: boolean;
+  junkBuildLater?: boolean;
+  junkRank?: number | null;
+  junkTie?: number | null;
+  junkCopies?: number | null;
   orderPlaced?: boolean;
   /** Both undefined when nothing masterable needs the item (mods, resources). */
   parentMastered?: boolean;
@@ -241,6 +244,7 @@ export function matchesSharedFilters(item: FilterableItem, filters: SharedFilter
     return false;
   }
   if (filters.spares !== "all" && item.spare !== (filters.spares === "yes")) return false;
+  if (!matchesYesNo(filters.junk, item.junk)) return false;
   if (!matchesYesNo(filters.vaulted, item.vaulted)) return false;
   if (!matchesPartType(item, filters.partType)) return false;
   if (!matchesYesNo(filters.favorite, item.favorite)) return false;
@@ -312,16 +316,20 @@ export function compareSharedFilterSort<T extends FilterableItem>(
     return direction * compareNames(a.name, b.name);
   }
 
-  // Cleanup is group-aware: parts rank by ducats per platinum, gear by tier.
-  // The direction flips only the primary rank, so the cheap-first and
+  // Junk is group-aware: parts rank by ducats per platinum, gear by tier.
+  // Rows a future build still claims always sink below everything else, in
+  // both directions. The direction flips only the rank, so the cheap-first and
   // more-copies-first tie-breaks keep reading as "dispose this one sooner".
-  if (filters.sortBy === "cleanup") {
-    const rank = compareNullableNumber(a.cleanupRank ?? null, b.cleanupRank ?? null, direction);
+  if (filters.sortBy === "junk") {
+    if ((a.junkBuildLater === true) !== (b.junkBuildLater === true)) {
+      return a.junkBuildLater === true ? 1 : -1;
+    }
+    const rank = compareNullableNumber(a.junkRank ?? null, b.junkRank ?? null, direction);
     if (rank !== 0) return rank;
-    const aTie = a.cleanupTie ?? -1;
-    const bTie = b.cleanupTie ?? -1;
+    const aTie = a.junkTie ?? -1;
+    const bTie = b.junkTie ?? -1;
     if (aTie !== bTie) return aTie - bTie;
-    const copies = (b.cleanupCopies ?? 0) - (a.cleanupCopies ?? 0);
+    const copies = (b.junkCopies ?? 0) - (a.junkCopies ?? 0);
     if (copies !== 0) return copies;
     return compareNames(a.name, b.name);
   }
@@ -355,6 +363,7 @@ export const FILTER_CONTROL_IDS: readonly FilterControlId[] = [
   "orderPlaced",
   "mastered",
   "spares",
+  "junk",
   "vaultedChips",
   "partType",
   "favorite",
@@ -395,6 +404,7 @@ export const FILTER_CONTROL_FIELDS: Record<FilterControlId, readonly (keyof Shar
     orderPlaced: ["orderPlaced"],
     mastered: ["mastered"],
     spares: ["spares"],
+    junk: ["junk"],
     vaultedChips: ["vaulted"],
     partType: ["partType"],
     favorite: ["favorite"],
@@ -416,6 +426,7 @@ export const FILTER_CONTROL_LABEL_KEYS: Record<FilterControlId, MessageKey> = {
   orderPlaced: "filters.orderPlaced",
   mastered: "common.mastered",
   spares: "filters.spares",
+  junk: "filters.junk",
   vaultedChips: "common.vaulted",
   partType: "filters.partTypeTitle",
   favorite: "filters.favoriteTitle",
@@ -436,6 +447,7 @@ export const FILTER_CONTROL_SUPPORT: Record<FilterScope, readonly FilterControlI
     "orderPlaced",
     "mastered",
     "spares",
+    "junk",
     "vaultedChips",
     "partType",
     "favorite",

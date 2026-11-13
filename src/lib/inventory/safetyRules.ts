@@ -467,6 +467,28 @@ export function recipeCopiesFor(context: SafetyContext, uniqueName: string): num
   );
 }
 
+interface GrossDemandCache {
+  mastered: ReadonlySet<string>;
+  value: ReadonlyMap<string, number>;
+}
+
+const GROSS_DEMAND_CACHE = new WeakMap<Record<string, ItemDbEntry>, GrossDemandCache>();
+
+/** Units every unmastered build consumes before owned copies settle them. The
+ *  trade engine's demand subtracts what is held, so a part sitting in the
+ *  inventory can read as spare even when a future build needs it. The junk
+ *  rules use this gross view to keep that copy instead. */
+export function grossRecipeDemand(
+  itemDb: Record<string, ItemDbEntry>,
+  mastered: ReadonlySet<string>,
+): ReadonlyMap<string, number> {
+  const cached = GROSS_DEMAND_CACHE.get(itemDb);
+  if (cached && cached.mastered === mastered) return cached.value;
+  const value = buildRecipeDemand(itemDb, mastered, undefined, undefined, undefined).demand;
+  GROSS_DEMAND_CACHE.set(itemDb, { mastered, value });
+  return value;
+}
+
 /** Identity locks and per-item spares are stored under. Synthetic set rows keep
  *  their `#set` internalName, so a kept set never collides with its root item. */
 export function safetyKeyFor(item: SafetyItem): string {

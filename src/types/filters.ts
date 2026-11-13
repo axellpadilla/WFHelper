@@ -32,7 +32,7 @@ export type SharedSortKey =
   | "missing_parts"
   | "parts_owned"
   | "mastery_xp"
-  | "cleanup";
+  | "junk";
 
 export type SortDirection = "asc" | "desc";
 
@@ -49,6 +49,7 @@ export type FilterControlId =
   | "orderPlaced"
   | "mastered"
   | "spares"
+  | "junk"
   | "vaultedChips"
   | "partType"
   | "favorite"
@@ -73,6 +74,7 @@ export interface SharedFiltersState {
   orderPlaced: YesNoFilterMode;
   mastered: YesNoFilterMode;
   spares: YesNoFilterMode;
+  junk: YesNoFilterMode;
   vaulted: YesNoFilterMode;
   partType: PartTypeFilterMode;
   favorite: YesNoFilterMode;

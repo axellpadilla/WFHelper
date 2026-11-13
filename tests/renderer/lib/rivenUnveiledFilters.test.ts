@@ -19,6 +19,7 @@ function defaultFilters(overrides: Partial<SharedFiltersState> = {}): SharedFilt
     orderPlaced: "all",
     mastered: "all",
     spares: "all",
+    junk: "all",
     vaulted: "all",
     partType: "all",
     favorite: "all",
