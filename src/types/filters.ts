@@ -31,7 +31,8 @@ export type SharedSortKey =
   | "complete_sets"
   | "missing_parts"
   | "parts_owned"
-  | "mastery_xp";
+  | "mastery_xp"
+  | "cleanup";
 
 export type SortDirection = "asc" | "desc";
 

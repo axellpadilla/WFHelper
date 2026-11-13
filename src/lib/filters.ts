@@ -26,6 +26,7 @@ const DESCENDING_DEFAULT_SORT_KEYS = new Set<string>([
   "complete_sets",
   "mastery_xp",
   "parts_owned",
+  "cleanup",
   "ev",
   "gold",
   "ducat",
@@ -69,6 +70,11 @@ interface FilterableItem {
   missingParts?: number | null;
   /** Distinct component types owned; null when the item has no parts to track. */
   partsOwned?: number | null;
+  /** Cleanup annotation: primary rank (tier or ducatonator), cheap-first tie,
+   *  and how many copies are disposable. Only the annotated tabs carry them. */
+  cleanupRank?: number | null;
+  cleanupTie?: number | null;
+  cleanupCopies?: number | null;
   orderPlaced?: boolean;
   /** Both undefined when nothing masterable needs the item (mods, resources). */
   parentMastered?: boolean;
@@ -304,6 +310,20 @@ export function compareSharedFilterSort<T extends FilterableItem>(
 
   if (filters.sortBy === "name") {
     return direction * compareNames(a.name, b.name);
+  }
+
+  // Cleanup is group-aware: parts rank by ducats per platinum, gear by tier.
+  // The direction flips only the primary rank, so the cheap-first and
+  // more-copies-first tie-breaks keep reading as "dispose this one sooner".
+  if (filters.sortBy === "cleanup") {
+    const rank = compareNullableNumber(a.cleanupRank ?? null, b.cleanupRank ?? null, direction);
+    if (rank !== 0) return rank;
+    const aTie = a.cleanupTie ?? -1;
+    const bTie = b.cleanupTie ?? -1;
+    if (aTie !== bTie) return aTie - bTie;
+    const copies = (b.cleanupCopies ?? 0) - (a.cleanupCopies ?? 0);
+    if (copies !== 0) return copies;
+    return compareNames(a.name, b.name);
   }
 
   const aMetric = toMetric(a, filters.sortBy);
